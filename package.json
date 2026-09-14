@@ -14,7 +14,11 @@
     "score": "npm run score -w engine",
     "treffer": "npm run treffer -w engine",
     "write": "npm run write -w engine",
+    "anschreiben": "npm run anschreiben -w engine",
+    "freigabe": "npm run freigabe -w engine",
+    "anmelden": "npm run anmelden -w engine --",
     "mail": "npm run mail -w engine",
+    "antwort": "npm run antwort -w engine",
     "apply": "npm run apply -w engine"
   }
 }
