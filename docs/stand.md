@@ -889,9 +889,8 @@ werden.
 
 ## Offene Punkte für Niki
 
-- **Prüfen, ob `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` als GitHub-Secrets
-  hinterlegt sind** (Projekt-Einstellungen -> Secrets and variables ->
-  Actions) - `motor.yml` erwartet sie seit heute für `write`/`freigabe`.
+- ~~Prüfen, ob `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` als GitHub-Secrets
+  hinterlegt sind~~ - **erledigt (2026-09-14)**, beide nachgetragen.
 - **Zwei neue Vollautomatik-Treffer warten auf dich per Telegram**
   (HOFER Siemensstraße, OBI Samstagsaushilfe Kassa - beide willhaben, kein
   Adapter dort) - Direktlink ist raus, du bewirbst dich dort selbst.
