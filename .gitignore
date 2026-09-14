@@ -1,0 +1,16 @@
+node_modules/
+.env
+.env.local
+*.log
+screenshots/
+# Echte persoenliche Daten (Name, Adresse, Geburtsdatum, Lebenslauf-Text) -
+# so sensibel wie ein Passwort, darf niemals ins Repo. Vorlage: profil-daten.example.ts
+engine/src/profil-daten.ts
+# Gespeicherte Login-Sitzungen (Cookies) aus "npm run anmelden" - so sensibel
+# wie ein Passwort, darf niemals ins Repo.
+engine/.auth/
+playwright-report/
+test-results/
+.next/
+dist/
+.DS_Store

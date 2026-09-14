@@ -1,0 +1,145 @@
+# Der Motor von Apply AI - laeuft einmal taeglich von selbst.
+#
+# Warum hier und nicht auf einer Website: hier laeuft ein echter Chrome-Browser,
+# es gibt keine 10-Sekunden-Grenze, und der Zeitplan ist frei waehlbar.
+# Kostenlos, solange das Projekt PRIVAT ist - und privat muss es ohnehin sein,
+# weil Lebenslauf und persoenliche Daten drinstecken.
+#
+# Bevor das hier zum ersten Mal laufen kann, muessen die Zugangsdaten als
+# "Secrets" hinterlegt werden. Siehe docs/stand.md, Abschnitt GitHub Actions.
+
+name: Motor
+
+on:
+  # Zeitplan war abgeschaltet (Nikis Entscheidung, 2026-08-30), solange Writer
+  # und Telegram-Freigabe fehlten - der Motor haette sonst nur Anzeigen
+  # gesammelt, mit denen nichts passiert. Seit 2026-09-13 wieder scharf, erst
+  # dreimal, dann (noch am selben Tag, Nikis Entscheidung) auf einmal taeglich
+  # reduziert - drei Laeufe waren ihm zu viel.
+  schedule:
+    # 05:00 UTC = 07:00 oesterreichische Sommerzeit, 06:00 im Winter - kurz
+    # bevor Niki morgens vor der Schule aufs Handy schaut.
+    - cron: "0 5 * * *"
+
+  # Von Hand ausloesbar: Actions -> Motor -> Run workflow.
+  workflow_dispatch:
+    inputs:
+      portal:
+        description: "Nur ein Portal durchsuchen (leer = alle)"
+        required: false
+        default: ""
+      max:
+        description: "Hoechstens so viele neue Anzeigen pro Portal"
+        required: false
+        default: "15"
+
+# Zwei Laeufe gleichzeitig wuerden sich in der Datenbank ins Gehege kommen.
+concurrency:
+  group: motor
+  cancel-in-progress: false
+
+jobs:
+  suchen-und-bewerten:
+    runs-on: ubuntu-latest
+    # Falls sich ein Portal aufhaengt: nach 30 Minuten ist Schluss.
+    timeout-minutes: 30
+
+    # Das fertige Playwright-Abbild bringt Chromium schon mit. Ohne das
+    # wuerde bei jedem Lauf minutenlang heruntergeladen.
+    #
+    # ⚠ Diese Nummer muss GENAU zur Playwright-Fassung in engine/package.json
+    # passen. Sonst sucht Playwright seinen Browser an einer Stelle, an der das
+    # Abbild ihn nicht hingelegt hat, und der Lauf bricht mit
+    # "Executable doesn't exist" ab (passiert am 2026-08-30: package.json stand
+    # auf ^1.56.0, installiert wurde dadurch 1.62.1, das Abbild war 1.56.0).
+    # Deshalb steht die Fassung dort jetzt ohne ^ - beide Zahlen werden immer
+    # gemeinsam geaendert.
+    container:
+      image: mcr.microsoft.com/playwright:v1.62.1-noble
+
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      # Kein Fenster - dafuer ein Bildschirmfoto von jeder Seite, sonst
+      # steht man bei einem Fehler voellig im Dunkeln.
+      HEADFUL: ""
+      SHOTS: "1"
+      DRY_RUN: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - run: npm ci
+
+      - name: Portale durchsuchen
+        # Die zwei Eingaben werden NICHT in die Befehlszeile geschrieben,
+        # sondern als Umgebungsvariablen uebergeben - der Scout liest beide
+        # von selbst (SCOUT_PORTAL / SCOUT_MAX).
+        #
+        # Grund: Alles, was GitHub mit ${{ }} direkt in eine `run`-Zeile
+        # einsetzt, landet dort als Text und wird von der Shell mitgelesen.
+        # Wer das Feld ausfuellen darf, koennte damit eigene Befehle
+        # einschleusen. Hier ist das Projekt privat und nur Niki kann den Lauf
+        # ausloesen - es ist also kein akutes Loch, sondern die Sorte Zeile,
+        # die man spaeter nicht mehr hinterfragt. Deshalb gleich richtig.
+        env:
+          SCOUT_PORTAL: ${{ inputs.portal }}
+          SCOUT_MAX: ${{ inputs.max || '15' }}
+        run: npm run scout
+
+      - name: Anzeigen bewerten
+        run: npm run score
+
+      - name: Anschreiben schreiben (Vollautomatik ab auto_send_min, sonst Telegram-Rueckfrage)
+        # Kein DRY_RUN-Bezug: write.ts verschickt nichts nach aussen, es
+        # schreibt nur in applications und schickt hoechstens eine
+        # Telegram-Nachricht - das IST hier die Benachrichtigung, kein
+        # Seiteneffekt, der abgesichert werden muesste.
+        run: npm run write
+
+      - name: Liegengebliebene Telegram-Knopfdruecke abholen
+        # Faengt Knopfdruecke ab, die seit dem letzten Lauf angekommen sind,
+        # und schickt Entwuerfe nach, bei denen der Push oben fehlgeschlagen
+        # ist. Ersetzt noch nicht "Freigabe stoesst den Motor sofort an" aus
+        # dem Bauplan (braucht einen Webhook) - Niki sieht das Ergebnis erst
+        # beim naechsten Lauf, spaetestens am naechsten Tag.
+        run: npm run freigabe
+
+      - name: Trefferliste ins Protokoll schreiben
+        run: npm run treffer 15
+
+      # Erscheint direkt oben auf der Actions-Laufseite (Tab "Summary"), ohne
+      # dass man erst ein Protokoll aufklappen muss - genau das, was auf einen
+      # Blick zeigen soll, ob der Tag normal lief oder irgendwo ein Portal
+      # dichtgemacht hat. `if: always()` heisst: erscheint auch, wenn ein
+      # frueherer Schritt (z.B. eine Portal-Sperre) den Lauf schon abgebrochen
+      # hat - genau dann ist die Zusammenfassung am wichtigsten.
+      - name: Zusammenfassung fuer GitHub
+        if: always()
+        run: |
+          {
+            echo "## Apply AI - Lauf vom $(date -u +%Y-%m-%d), $(date -u +%H:%M) UTC"
+            echo ""
+            echo '```'
+            npm run treffer 15
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Bei einem Fehler sind die Bildschirmfotos das Einzige, woran man
+      # sieht, was das Portal gezeigt hat. Deshalb immer mitnehmen.
+      - name: Bildschirmfotos aufheben
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bildschirmfotos-${{ github.run_number }}
+          path: engine/screenshots/
+          retention-days: 7
+          if-no-files-found: ignore

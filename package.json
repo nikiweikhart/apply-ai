@@ -1,0 +1,20 @@
+{
+  "name": "apply-ai",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Bewerbungsbot: findet Jobs, bewertet sie, schreibt und verschickt Bewerbungen.",
+  "workspaces": ["engine"],
+  "scripts": {
+    "check": "npm run check -w engine",
+    "seed": "npm run seed -w engine",
+    "profil": "npm run profil -w engine",
+    "scout": "npm run scout -w engine",
+    "jobs": "npm run jobs -w engine",
+    "untersuchen": "npm run untersuchen -w engine --",
+    "score": "npm run score -w engine",
+    "treffer": "npm run treffer -w engine",
+    "write": "npm run write -w engine",
+    "mail": "npm run mail -w engine",
+    "apply": "npm run apply -w engine"
+  }
+}
