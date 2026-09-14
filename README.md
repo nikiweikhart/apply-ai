@@ -59,7 +59,7 @@ erst per Telegram-Knopf nach. Darunter wird nur abgelegt, nicht gelöscht.
 Eine reine Gratis-Website kann das nicht: Funktionen brechen nach zehn
 Sekunden ab, kein echter Browser läuft dort. Apply AI soll sich aber selbst
 durch die Portale klicken — deshalb läuft der Motor in GitHub Actions
-(kostenlos im privaten Projekt, beliebiger Zeitplan, echtes Chromium).
+(kostenlos, beliebiger Zeitplan, echtes Chromium).
 
 Der Browser-Agent für Portal-Bewerbungen läuft bewusst **nicht** dort, sondern
 nur lokal: hokify und karriere.at verlangen für die Bewerbung ein eingeloggtes
@@ -98,18 +98,23 @@ menschlicher Login, den Apply AI danach wiederverwendet.
 1. **Datenbank:** Supabase-Projekt anlegen (gratis), Inhalt von `db/schema.sql`
    im SQL-Editor ausführen.
 2. **Zugangsdaten:** `.env.example` kopieren nach `.env` und ausfüllen.
-3. **Pakete installieren:**
+3. **Eigenes Profil:** `engine/src/profil-daten.example.ts` kopieren nach
+   `engine/src/profil-daten.ts` und mit den eigenen Daten ausfüllen (bleibt
+   ungetrackt, siehe `.gitignore`).
+4. **Pakete installieren:**
    ```
    npm install
    npx playwright install chromium
    ```
-4. **Testen:**
+5. **Testen:**
    ```
    npm run check
+   npm run profil
    ```
-   Prüft Zugangsdaten, Datenbank, Lebenslauf und Claude — und sagt bei jedem
-   Problem, was zu tun ist.
-5. **Bei Portalen anmelden** (einmalig, für die Browser-Bewerbung):
+   `check` prüft Zugangsdaten, Datenbank, Lebenslauf und Claude — und sagt bei
+   jedem Problem, was zu tun ist. `profil` schreibt das eigene Profil aus
+   Schritt 3 in die Datenbank.
+6. **Bei Portalen anmelden** (einmalig, für die Browser-Bewerbung):
    ```
    npm run anmelden hokify
    npm run anmelden karriere
@@ -144,6 +149,8 @@ Browser-Bewerbung auf Portalen laufen bewusst lokal, siehe oben.
 
 ---
 
-*Dieses Projekt ist privat, solange persönliche Daten (Lebenslauf, Adresse,
-Kontaktdaten) direkt im Code bzw. in der Versionsgeschichte stehen. Vor einer
-Veröffentlichung braucht es eine eigene Bereinigung — siehe `docs/stand.md`.*
+*Persönliche Daten (Name, Adresse, Lebenslauf-Text) stehen bewusst nicht im
+Code: `engine/src/seed-profil.ts` liest sie aus `profil-daten.ts`, einer
+ungetrackten Datei nach dem Muster von `.env` (Vorlage:
+`engine/src/profil-daten.example.ts`). Wer dieses Projekt für sich selbst
+nutzen will, kopiert die Vorlage und füllt sie mit den eigenen Daten.*

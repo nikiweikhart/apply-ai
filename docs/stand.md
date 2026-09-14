@@ -1,17 +1,50 @@
 # Stand und nächster Schritt
 
-**Letzter Arbeitstag: 2026-09-13**
+**Letzter Arbeitstag: 2026-09-14**
 
-⚠ **Zuerst lesen: Das Supabase-Projekt schläft.** Am 2026-09-07 war
-`ebafsuieuwoftdhrkbax.supabase.co` nicht mehr auffindbar — der Name führt ins
-Leere. Das ist kein Fehler im Code: Supabase legt Gratis-Projekte nach etwa
-einer Woche ohne Zugriff schlafen, und seit dem 2026-08-30 ist der Zeitplan
-abgeschaltet, es hat also nichts mehr auf die Datenbank zugegriffen.
-Aufwecken: [supabase.com/dashboard](https://supabase.com/dashboard) öffnen,
-das Projekt anklicken, auf der grünen Seite **Restore project** drücken und
-ein bis zwei Minuten warten. Danach `npm run check` — Punkt 2 muss auf OK
-stehen. **Ohne diesen Schritt läuft nichts**, weder Scout noch Bewerter noch
-Writer.
+## 2026-09-14: Repo öffentlich, Git-Historie bereinigt
+
+Der Abschnitt „Vor einer Veröffentlichung auf GitHub" weiter unten ist damit
+**erledigt** - Niki wollte das Projekt heute vorzeigbar machen, nicht erst
+"irgendwann". Was passiert ist:
+
+- **Persönliche Daten aus dem Code ausgelagert:** `seed-profil.ts` enthielt
+  Name, Adresse, Schule und Geburtsdatum im Klartext. Stehen jetzt in
+  `engine/src/profil-daten.ts` (ungetrackt, siehe `.gitignore`), Vorlage dafür
+  ist `profil-daten.example.ts`. Nebenbei: `env.cvPath` und der
+  Mail-Anhang-Dateiname hatten Nikis Namen fest verdrahtet, jetzt generisch
+  über `CV_PDF_PATH` gelöst.
+- **Git-Historie neu gestartet:** kein `git-filter-repo` zur Hand (bräuchte
+  Python/pip), deshalb der in stand.md bereits genannte Alternativweg: alle 24
+  alten Commits (enthielten in älteren Versionen von `seed-profil.ts` und
+  dieser Datei die volle Adresse, Telefonnummer und das Geburtsdatum) durch
+  einen einzigen frischen Commit ersetzt und mit `--force` gepusht. Die alte
+  Historie ist damit unwiederbringlich weg - genau das war der Zweck.
+- **Actions-Logs geprüft, bevor auf Public umgestellt wurde:** alle drei
+  bisherigen Workflow-Läufe nach Namen/Adresse/Telefonnummer/Geburtsdatum/
+  E-Mail durchsucht. Einziger Fund: einmal schreibt das Modell in einer
+  „Vor dem Abschicken prüfen"-Anmerkung den Vornamen „Nikolaus" (kein
+  Nachname) - unbedenklich, der GitHub-Account heißt ohnehin `nikiweikhart`.
+  Die Bildschirmfoto-Artefakte zeigen nur die öffentlichen Jobportal-Seiten
+  und laufen nach 7 Tagen automatisch ab (`retention-days: 7` in `motor.yml`).
+- **Repo auf GitHub von Niki selbst auf Public umgestellt**
+  (`github.com/nikiweikhart/apply-ai`), inklusive GitHubs eigener
+  E-Mail-Bestätigung dafür.
+- **Nebenbei einen echten Bug gefunden und behoben:** `motor.yml` ruft
+  `npm run freigabe` vom Projekt-Root auf, das Root-`package.json` kannte das
+  Script aber nicht - deshalb schlug der Telegram-Freigabe-Schritt bei jedem
+  Motor-Lauf fehl (`npm error Missing script`). Gleiches Muster fehlte für
+  `anschreiben`, `antwort` und `anmelden`, alle vier jetzt nachgetragen.
+- **README aktualisiert:** die alte "Projekt ist privat, bis..."-Zeile ist
+  raus, dafür ein Hinweis, wie ein Fremder das Projekt für sich selbst mit
+  eigenen Daten einrichtet (`profil-daten.example.ts` kopieren).
+
+**Das Supabase-Projekt ist wach** - der geplante Lauf am 2026-09-14, 05:00 UTC
+(Motor #3) kam bis zum Bewerter und Writer durch (186 Anzeigen bewertet, drei
+neue Anschreiben). War es zuvor mal eingeschlafen (Gratis-Projekte schlafen
+nach etwa einer Woche ohne Zugriff ein): [supabase.com/dashboard](https://supabase.com/dashboard)
+öffnen → Projekt anklicken → **Restore project** → ein bis zwei Minuten
+warten → `npm run check`.
 
 ## Was fertig ist
 
@@ -882,35 +915,21 @@ werden.
 - Prüfen, dass in der Anthropic Console **Auto-Reload ausgeschaltet** ist
 - Der API-Schlüssel läuft am **01.01.2027** ab
 
-## Vor einer Veröffentlichung auf GitHub (2026-09-13)
+## Vor einer Veröffentlichung auf GitHub (2026-09-13, erledigt am 2026-09-14)
 
-Niki will das Projekt **irgendwann** vorzeigbar machen (Portfolio, andere
-Leute sehen den Code) - nicht jetzt sofort, aber die Absicht steht. Bis
-dahin bleibt das Repo **privat** (unverändert, siehe Sicherheit im README).
-Damit der Umstieg später nicht überrascht, hier ehrlich, was vorher noch zu
-tun ist - keins davon ist heute angefasst worden:
+**✅ Erledigt - siehe den Abschnitt ganz oben ("2026-09-14: Repo öffentlich,
+Git-Historie bereinigt") für den genauen Ablauf.** Das Repo ist seit
+2026-09-14 `public`. Ursprünglich hier festgehalten war die Absicht, das
+"irgendwann" zu machen - daraus wurde noch am selben Tag ein "jetzt gleich",
+auf Nikis Wunsch. Die drei Punkte, die damals als offen galten:
 
-- **Persönliche Daten stecken in der Git-Historie**, nicht nur im aktuellen
-  Stand: Name, Adresse, Geburtsdatum, Telefonnummer, Schule - in alten
-  Commit-Nachrichten, in `seed-profil.ts` (das Profil muss ja irgendwo
-  stehen, um die Datenbank zu befüllen) und stellenweise in diesem Dokument.
-  Eine Datei heute zu bereinigen reicht nicht, weil jede alte Version über
-  `git log` weiterhin abrufbar bleibt. Nötig ist ein bewusster, separater
-  Schritt mit einem Werkzeug wie `git-filter-repo` (oder ein komplett neuer
-  Anfang ohne die alte Historie) - das ist nichts, was man nebenbei mit
-  erledigt, sondern ein eigener Termin kurz vor der tatsächlichen
-  Veröffentlichung.
-- **`seed-profil.ts` enthält Nikis echten Lebenslauf-Text als Quellcode**
-  (Name, Schule, Adresse, Erfahrung). Für eine öffentliche Fassung müsste das
-  in eine eigene, nicht eingecheckte Datei wandern (nach dem Muster von
-  `.env`) - das Skript liest dann von dort statt die Daten im Code stehen zu
-  haben.
-- Diese Datei (`docs/stand.md`) ist ab heute bewusst ohne Telefonnummer und
-  Straße geschrieben (siehe die beiden Stellen oben) - trotzdem: die alten
-  Versionen mit den vollständigen Angaben bleiben in der Historie, bis die
-  oben beschriebene Bereinigung passiert.
-- Erst wenn das erledigt ist, ist ein Wechsel auf "Public" (oder gezielt
-  einzelne Personen einladen) ohne Risiko.
+- ~~Persönliche Daten stecken in der Git-Historie~~ - Historie neu gestartet
+  statt mit `git-filter-repo` selektiv bereinigt (Tool nicht vorhanden, und
+  bei 24 Commits war der komplette Neuanfang der zuverlässigere Weg).
+- ~~`seed-profil.ts` enthält Nikis echten Lebenslauf-Text als Quellcode~~ -
+  ausgelagert nach `profil-daten.ts` (ungetrackt).
+- ~~Diese Datei (`docs/stand.md`) müsste vor der Historie-Bereinigung
+  nochmal geprüft werden~~ - passiert, siehe Actions-Log-Check oben.
 
 ## Zum Wiedereinsteigen
 
