@@ -12,13 +12,13 @@
  */
 import { db } from "./lib/supabase.ts";
 import { env } from "./lib/env.ts";
-import { AUSSCHLUESSE, AUTO_AB, GEBURTSDATUM, PROFIL, RUECKFRAGE_AB, VERFUEGBARKEIT } from "./profil-daten.ts";
+import { AUSSCHLUESSE, AUTO_AB, GEBURTSDATUM, NAME, PROFIL, RUECKFRAGE_AB, VERFUEGBARKEIT } from "./profil-daten.ts";
 
 const { error } = await db
   .from("settings")
   .update({
     profile_text: PROFIL,
-    availability: { ...VERFUEGBARKEIT, geburtsdatum: GEBURTSDATUM },
+    availability: { ...VERFUEGBARKEIT, geburtsdatum: GEBURTSDATUM, name: NAME },
     exclusions: AUSSCHLUESSE,
     // Nikis Entscheidung am 2026-08-30: von 80 auf 70 gesenkt. Bei 80 blieb
     // wochenlang genau eine einzige Anzeige uebrig - der Bot haette so gut wie

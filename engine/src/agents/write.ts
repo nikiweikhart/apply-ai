@@ -48,7 +48,6 @@ import {
   innerhalbSperrfrist,
   SPERRFRIST_TAGE,
 } from "../lib/firma.ts";
-import { NAME } from "../profil-daten.ts";
 
 // ------------------------------------------------------------- Aufrufparameter
 const argv = process.argv.slice(2).filter((a) => !a.startsWith("-"));
@@ -60,7 +59,7 @@ const MAX = Number(argv.find((a) => /^\d+$/.test(a)) ?? 3);
 // ------------------------------------------------------------- Einstellungen
 const { data: einstellungen } = await db
   .from("settings")
-  .select("profile_text, cover_template, auto_send_min, approval_min")
+  .select("profile_text, cover_template, auto_send_min, approval_min, availability")
   .eq("id", 1)
   .single();
 
@@ -68,10 +67,11 @@ const profil = (einstellungen?.profile_text as string | null) ?? "";
 const vorlage = (einstellungen?.cover_template as string | null) ?? "";
 const autoAb = (einstellungen?.auto_send_min as number | null) ?? 70;
 const freigabeAb = (einstellungen?.approval_min as number | null) ?? 60;
+const name = (einstellungen?.availability as { name?: string } | null)?.name ?? "";
 
-if (!profil) {
+if (!profil || !name) {
   console.error(
-    "X  [write] Kein Profiltext hinterlegt.\n" +
+    "X  [write] Kein Profiltext oder Name hinterlegt.\n" +
       "        -> Erst 'npm run profil' laufen lassen, sonst weiss Claude nicht,\n" +
       "           in wessen Namen es schreiben soll.",
   );
@@ -254,7 +254,7 @@ So schreibst du:
   - Ein Satz zur Verfuegbarkeit: Samstag oder Sonntag ganztags. Daran
     scheitern die meisten Bewerbungen, also sag ihn klar.
   - Schluss: Bitte um ein Gespraech. Kein Konjunktiv-Gewinde.
-  - Unterschrift: nur "${NAME}" in der letzten Zeile.
+  - Unterschrift: nur "${name}" in der letzten Zeile.
 
 Und so nicht:
 
