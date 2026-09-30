@@ -57,6 +57,13 @@ export const env = {
   schritteFotografieren: process.env.SHOTS === "1",
   /** Alles tun ausser wirklich abschicken. Standard: an. */
   dryRun: process.env.DRY_RUN !== "0",
+  /**
+   * Portal-Bewerbungen (hokify, karriere.at) an der Vorschau des Portals
+   * anhalten, statt selbst abzuschicken - das Verhalten bis 2026-09-30.
+   * Standard seit 2026-09-30 (Nikis Entscheidung): aus, also abschicken.
+   * DRY_RUN bleibt davon unberuehrt das aeussere Sicherheitsnetz.
+   */
+  portalVorschauStopp: process.env.PORTAL_VORSCHAU_STOPP === "1",
 };
 
 /** Modelle an einer Stelle, damit man sie nicht im Code suchen muss. */

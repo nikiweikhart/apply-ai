@@ -1,6 +1,128 @@
 # Stand und nächster Schritt
 
-**Letzter Arbeitstag: 2026-09-14**
+**Letzter Arbeitstag: 2026-09-30**
+
+## 2026-09-30: hokify und karriere.at schicken jetzt selbst ab
+
+**Nikis Entscheidung (ersetzt die vom 2026-09-13 „KI beantwortet, du
+bestätigst vor dem Absenden"):** Ab der Punkteschwelle schickt Apply AI auf
+hokify und karriere.at wirklich selbst ab. Keine Telegram-Links mehr, bei
+denen er alles selbst eingeben muss. willhaben bleibt wie es ist (kein
+Adapter möglich, siehe 2026-09-13).
+
+**Was gebaut ist:**
+
+- `engine/src/adapters/bewerben.ts` (neu): gemeinsamer Vertrag beider
+  Adapter. Ein Adapter meldet `abgeschickt`, `unsicher`, `vorschau` oder
+  `trockenlauf` plus eine Zusammenfassung dessen, was er ins Formular
+  geschrieben hat. Dazu `absendenUndPruefen()`: klickt den Absenden-Knopf und
+  wartet bis zu 25 Sekunden auf einen Erfolgstext, der **nach** dem Klick neu
+  auftaucht und vorher nicht da war. Taucht keiner auf, ist das Ergebnis
+  `unsicher`, nicht `sent`. Erscheint ein CAPTCHA, wird nichts umgangen.
+- **Erfolgsmuster** stehen in `ERFOLGS_MUSTER` und sind absichtlich eng
+  („Bewerbung wurde versendet", „Danke für deine Bewerbung", „erfolgreich
+  beworben"). hokifys Vorschau sagt „bevor du deine Bewerbung abschickst" -
+  das darf nicht als Erfolg gelten, `npm test` prüft genau das (neue Datei
+  `bewerben.test.ts`, 4 Tests, echte Vorschau-Texte).
+- `karriere-bewerben.ts`: nach „Vorschau ansehen" jetzt Klick auf
+  „Bewerbung abschließen" (`[data-qa="apply"]`) und Erfolgsprüfung.
+- `hokify-bewerben.ts`: Fragen-Teil als eigene Funktion
+  `hokifyAssistentAusfuellen()`, danach durch beide Vorschau-Seiten bis
+  „Bewerbung versenden". Leerer Assistent ist **kein Fehler** mehr: hokify
+  speichert Antworten serverseitig, eine schon einmal ausgefüllte Bewerbung
+  landet sofort in der Vorschau. Für Telegram wird dann der Text der
+  Vorschau-Seite („Deine Antworten") verwendet.
+- `lib/env.ts`: `PORTAL_VORSCHAU_STOPP=1` stellt das alte Anhalten an der
+  Portal-Vorschau wieder her. Standard ist ab jetzt: abschicken. `DRY_RUN`
+  bleibt das äußere Sicherheitsnetz und fasst im Trockenlauf kein Formular an
+  (prüft nur, ob der Bewerben-Knopf da ist).
+- `agents/apply-browser.ts`: nach jedem echten Absenden Telegram
+  „✅ abgeschickt" mit Firma, Titel und allem, was der Bot angegeben hat.
+  Bei `unsicher`: Status `needs_manual`, Fehlertext beginnt mit
+  „UNSICHER, ob abgeschickt - bitte pruefen", Telegram „❓ unsicher".
+- **`npm run apply nochmal`** nimmt zusätzlich `needs_manual`-Bewerbungen von
+  Portalen mit Adapter (hokify, karriere). Nie dabei: alles mit der Marke
+  UNSICHER (sonst droht eine doppelte Bewerbung), willhaben, jede Firma aus
+  `settings.exclusions.firmen` (McDonald's) und die fest eingetragene
+  `hokify.at/job/28943952` (dort steht serverseitig noch die falsche
+  McDonald's-Antwort). Mail-Entwürfe sind ohnehin Weg `mail` und werden hier
+  nie angefasst. `nur:<nummer>` wählt genau eine Anzeige aus.
+
+**hokifys Ablauf, erkundet mit sichtbarem Browser an `hokify.at/job/29098279`
+(Action Retail, freigegeben):**
+
+| Seite | Was dort steht | Was der Adapter tut |
+|---|---|---|
+| Datenschutz-Pflicht | „Um fortzufahren bitte die Datenschutzvereinbarung lesen und akzeptieren", eine Checkbox | anhaken (ohne Haken keine Bewerbung, wie der DSGVO-Haken bei karriere.at) |
+| Einwilligung | Radio `name="PRIVACY"`, `accept` / `decline` („Ohne Zustimmung fortfahren"), z. B. Daten 12 Monate aufbewahren | `decline`, solange es das gibt, datensparsam |
+| Lebenslauf | Datei-Upload | Lebenslauf-PDF hochladen |
+| Bewerbungsvorschau 1/2 | „Deine Antworten", Knopf „Antworten bestätigen" | Text für Telegram lesen, dann klicken |
+| Bewerbungsvorschau 2/2 | Profil, „Bewerbung speichern", **„Bewerbung versenden"** | „Bewerbung versenden" klicken, Erfolg prüfen |
+
+Zwei echte Fehler dabei gefunden und behoben:
+
+1. **Pflicht-Checkboxen wurden übersprungen.** Der alte Code hielt jede
+   reine Checkbox-Seite für freiwillig und klickte „Weiter". hokify meldete
+   „Antwort notwendig", der Adapter klickte bis zu 15-mal im Kreis. Jetzt:
+   Datenschutz-Pflicht wird angehakt, und jedes „Antwort notwendig" nach
+   einem Weiter-Klick bricht sofort mit klarer Meldung ab.
+2. **Der Lebenslauf war nicht mehr auffindbar.** Der Ordner `Samstagsjob`
+   ist von `Dokumente\` nach `Dokumente\AI\` umgezogen. `CV_PDF_PATH` in der
+   `.env` zeigt jetzt auf
+   `C:/Users/nikiw/OneDrive/Dokumente/AI/Samstagsjob/Lebenslauf_Nikolaus_Weikhart.pdf`.
+
+**Nebenbei aufgefallen:** hokifys Vorschau 2/2 führt den hochgeladenen
+Lebenslauf unter „Dokumente: Aktuelles Zeugnis" und zeigt bei „Eigener
+Lebenslauf" nichts. Die Firma bekommt also das PDF, nur falsch beschriftet.
+Außerdem ist im hokify-Profil keine Berufserfahrung eingetragen (Wien Süd
+fehlt). Beides ändert Niki am besten einmal selbst im hokify-Profil.
+
+**Stand der Datenbank am 2026-09-30:** Auf hokify stand **keine** Bewerbung
+auf `needs_manual`. Auf karriere.at hingen drei (Skyline, Guess, Fabasoft),
+allerdings nicht an der Vorschau, sondern mit der alten Meldung „Kein Konto
+fuer karriere in der .env" aus der Zeit vor dem Login. Dazu kommen zehn
+freigegebene hokify/karriere-Bewerbungen, die noch nie gelaufen sind.
+
+**Noch NICHT gelaufen, bitte selbst anstoßen:** Der Trockenlauf und das
+echte Abschicken wurden in dieser Sitzung von der Rechte-Prüfung von Claude
+Code blockiert („echte Transaktion"). Das wurde bewusst nicht umgangen. Die
+Action-Retail-Bewerbung ist auf hokify fertig ausgefüllt und steht an
+Vorschau 1/2, abgeschickt ist nichts. Reihenfolge wie besprochen:
+
+```
+npm run apply nochmal
+DRY_RUN=0 HEADFUL=1 npm run apply nochmal nur:29098279
+DRY_RUN=0 npm run apply nochmal
+```
+
+Umgebungsvariablen auf der Befehlszeile gehen vor die `.env` (so arbeitet
+`node --env-file`), die `.env` selbst bleibt also auf `DRY_RUN=1`.
+**Ungeprüft ist noch der genaue Erfolgstext von karriere.at.** Meldet der
+erste karriere.at-Lauf „unsicher", auf karriere.at unter „Meine
+Bewerbungen" nachsehen und den echten Text in `ERFOLGS_MUSTER` ergänzen.
+
+## 2026-09-19: Motor-Lauf schlug beim Anschreiben fehl - behoben
+
+Niki zeigte einen roten GitHub-Actions-Lauf: der Schritt „Anschreiben
+schreiben" stürzte mit `ERR_MODULE_NOT_FOUND` ab, `profil-daten.ts` sei nicht
+auffindbar. Ursache: `engine/src/agents/write.ts` importierte `NAME` direkt
+aus `profil-daten.ts` - genau die Datei, die seit der Bereinigung am
+2026-09-14 bewusst **ungetrackt** ist (siehe unten). In GitHub Actions gibt es
+diese Datei also gar nicht, jeder Motor-Lauf scheiterte seither an dieser
+einen Zeile, sobald er bis zum Schreiben kam.
+
+**Warum das erst jetzt auffiel:** Alle anderen Profildaten (`PROFIL`,
+`VERFUEGBARKEIT`, Ausschlüsse, Schwellenwerte) gehen seit jeher über
+`npm run profil` in die Tabelle `settings` und werden von dort gelesen - nur
+der Name wurde direkt aus der Datei importiert, statt denselben Umweg über
+die Datenbank zu nehmen. Genau das war beim Auslagern nach `profil-daten.ts`
+am 2026-09-14 übersehen worden.
+
+**Fix:** `NAME` steht jetzt mit im JSON-Feld `settings.availability` (neben
+`geburtsdatum`), `seed-profil.ts` schreibt es dort hinein, `write.ts` liest es
+von dort statt die Datei zu importieren - genau wie beim Rest des Profils.
+`npm run profil` einmal neu ausgeführt, `npm run write trocken` bestätigt: der
+Writer findet den Namen jetzt aus der Datenbank. Commit `7f62859`, gepusht.
 
 ## 2026-09-14: Repo öffentlich, Git-Historie bereinigt
 
@@ -52,7 +174,8 @@ warten → `npm run check`.
 - Anthropic-Schlüssel, 5 $ Guthaben als harte Kostenbremse
 - Supabase-Projekt, alle 6 Tabellen
 - Lebenslauf als PDF unter
-  `C:/Users/nikiw/OneDrive/Dokumente/Samstagsjob/Lebenslauf_Nikolaus_Weikhart.pdf`
+  `C:/Users/nikiw/OneDrive/Dokumente/AI/Samstagsjob/Lebenslauf_Nikolaus_Weikhart.pdf`
+  (bis 2026-09-30 ohne `AI/` - Ordner umgezogen)
 
 **Phase 1 — Fundament** ✅
 - TypeScript, Node 24 (führt `.ts` direkt aus, kein Build nötig)
@@ -367,6 +490,10 @@ npm run write ohnesperre         Firmensperre außer Kraft (bewusst, selten)
 npm run freigabe                 liegengebliebene Entwürfe nachschicken + Telegram-Knopfdrücke abholen
 
 npm run mail                     freigegebene Bewerbungen verschicken (DRY_RUN/MAIL_TEST_MODE beachten!)
+
+npm run apply                    freigegebene Portal-Bewerbungen abschicken (DRY_RUN beachten!)
+npm run apply nochmal            dazu haengende needs_manual von hokify/karriere (nie UNSICHER)
+npm run apply nochmal nur:123    nur die Anzeige, deren Adresse 123 enthaelt
 
 npm run antwort                  im Postfach nach Firmenantworten suchen (nur lesend)
 npm run antwort trocken          nur zeigen was gefunden wuerde, kein KI-Aufruf
@@ -937,6 +1064,9 @@ cd "C:\Users\nikiw\OneDrive\Dokumente\AI\Claude Code Projekte\apply-ai"
 npm run check
 npm run treffer
 ```
+
+Offen seit 2026-09-30: die drei `npm run apply nochmal`-Schritte ganz oben
+(Trockenlauf, eine echte Bewerbung mit `HEADFUL=1`, dann der Rest).
 
 Der vollständige Bauplan liegt unter
 `C:\Users\nikiw\.claude\plans\radiant-exploring-eclipse.md`.

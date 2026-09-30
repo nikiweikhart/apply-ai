@@ -12,30 +12,36 @@
  *   1. **Adapter gebaut + Anmeldung gespeichert** (`PORTAL_ADAPTER`,
  *      `eingeloggtBei()`). Niki loggt sich bei hokify und karriere.at ueber
  *      "Mit Google anmelden" ein - es gibt also kein eigenes Passwort, das
- *      hier stehen koennte. Stattdessen einmalig `npm run anmelden <portal>`:
- *      oeffnet ein sichtbares Fenster, Niki loggt sich selbst ein, das
- *      Programm speichert danach die Cookies in `engine/.auth/<portal>.json`
- *      (siehe `lib/browser.ts`). Der Adapter bekommt dann eine schon
- *      eingeloggte Seite - kein Passwort im Code, nirgends.
+ *      hier stehen koennte. Stattdessen einmalig `npm run anmelden <portal>`
+ *      (eigenes Chrome-Profil unter `engine/.auth/`, siehe `lib/browser.ts`).
+ *      Der Adapter bekommt dann eine schon eingeloggte Seite.
  *   2. **Sonst: `needs_manual`.** Apply AI erfindet keine Bewerbung, die es
  *      nicht wirklich abschicken kann. Niki bekommt den Direktlink per
- *      Telegram und bewirbt sich in dem Fall selbst - die Anzeige bleibt im
- *      Verlauf sichtbar statt unbemerkt zu verschwinden.
+ *      Telegram und bewirbt sich in dem Fall selbst.
  *
- * Stand (2026-09-13): hokify und karriere.at haben eigene Adapter (siehe
- * `adapters/`), beide stoppen bewusst an der Vorschau des jeweiligen Portals
- * statt selbst den letzten Absenden-Knopf zu klicken. willhaben bleibt ohne
- * Adapter - dort gibt es keinen portaleigenen Bewerbungsablauf, "Jetzt
- * bewerben" fuehrt zu einer von unzaehligen fremden Firmenseiten (siehe
- * docs/stand.md).
+ * Seit 2026-09-30 (Nikis Entscheidung) schicken hokify und karriere.at
+ * WIRKLICH selbst ab - vorher blieben beide an der Portal-Vorschau stehen.
+ * Nach jedem echten Absenden kommt eine Telegram-Nachricht "✅ abgeschickt"
+ * mit allem, was der Bot im Formular angegeben hat. Ist nach dem Klick nicht
+ * eindeutig ein Erfolgstext zu sehen, gilt die Bewerbung NICHT als `sent`,
+ * sondern `needs_manual` mit der Marke "UNSICHER" - und wird von `nochmal`
+ * nie ein zweites Mal versucht (sonst droht eine doppelte Bewerbung).
+ * `PORTAL_VORSCHAU_STOPP=1` in der .env stellt das alte Anhalten wieder her.
+ * willhaben bleibt ohne Adapter (siehe docs/stand.md).
  *
  * Sicherheitsnetz wie ueberall: `DRY_RUN` (Standard: an) zeigt nur, was
  * passieren wuerde - nichts wird in der Datenbank geaendert, keine
- * Telegram-Nachricht geschickt.
+ * Telegram-Nachricht geschickt, kein Formular angefasst.
+ *
+ * Nie abgeschickt wird, unabhaengig vom Status: jede Firma aus
+ * `settings.exclusions.firmen` (z.B. McDonald's) und alles in `NIE_ABSCHICKEN`.
  *
  * Starten mit:
- *   npm run apply             alle freigegebenen Portal-Bewerbungen
- *   npm run apply 1           nur eine (zum Ausprobieren)
+ *   npm run apply                  alle freigegebenen Portal-Bewerbungen
+ *   npm run apply 1                nur eine (zum Ausprobieren)
+ *   npm run apply nochmal          zusaetzlich haengende (`needs_manual`) von
+ *                                  Portalen mit Adapter - ausser "UNSICHER"
+ *   npm run apply nochmal nur:123  nur die Anzeige, deren Adresse 123 enthaelt
  */
 import { db } from "../lib/supabase.ts";
 import { log } from "../lib/log.ts";
@@ -44,19 +50,8 @@ import { sendeNachricht, telegramEingerichtet } from "../lib/telegram.ts";
 import { browserMitProfilStarten, browserStarten, cookiesAblehnen, eingeloggtBei, screenshot, warte } from "../lib/browser.ts";
 import { hokifyBewerben } from "../adapters/hokify-bewerben.ts";
 import { karriereBewerben } from "../adapters/karriere-bewerben.ts";
+import { UNSICHER_MARKE, type BewerbungsAdapter } from "../adapters/bewerben.ts";
 import type { Page } from "playwright";
-
-/**
- * Ein Portal-Adapter fuer das Bewerben. Bekommt eine Seite, die schon ueber
- * die gespeicherte Anmeldung (`npm run anmelden <portal>`) eingeloggt ist und
- * auf der Anzeige steht, dazu die Bewerbung - und meldet zurueck, ob es
- * geklappt hat. Wirft bei allem, worauf kein zweiter Versuch hilft (CAPTCHA,
- * unbekanntes Formular) - das faengt der Aufrufer als `needs_manual` ab.
- */
-type BewerbungsAdapter = (
-  page: Page,
-  bewerbung: { anschreiben: string; lebenslaufPfad: string },
-) => Promise<{ belegText: string }>;
 
 /**
  * hokify und karriere.at sind gebaut (Baureihenfolge wie beim Scout).
@@ -68,40 +63,89 @@ const PORTAL_ADAPTER: Record<string, BewerbungsAdapter> = {
   karriere: karriereBewerben,
 };
 
+/**
+ * Anzeigen, die NIE abgeschickt werden, egal welcher Status in der Datenbank
+ * steht. hokify.at/apply/28943952: dort ist serverseitig noch die falsche
+ * Antwort "Warst du bereits bei McDonald's taetig? -> Ja" gespeichert (aus
+ * einem Testlauf vor dem Bugfix vom 2026-09-13). Ist ohnehin McDonald's und
+ * `rejected`, steht hier aber ausdruecklich, damit es nie davon abhaengt.
+ */
+const NIE_ABSCHICKEN = ["hokify.at/job/28943952", "hokify.at/apply/28943952"];
+
 // ------------------------------------------------------------- Aufrufparameter
 const argv = process.argv.slice(2).filter((a) => !a.startsWith("-"));
 const MAX = Number(argv.find((a) => /^\d+$/.test(a)) ?? 999);
+const NOCHMAL = argv.includes("nochmal");
+const NUR = argv.find((a) => a.startsWith("nur:"))?.slice(4) ?? null;
 
 // ------------------------------------------------------------- Kandidaten
 const { data: bereite, error: ladeFehler } = await db
   .from("applications")
-  .select("job_id, cover_letter, jobs(id, title, company, url, portal_id)")
-  .eq("status", "approved")
+  .select("job_id, status, error, cover_letter, created_at, jobs(id, title, company, url, portal_id)")
+  .in("status", NOCHMAL ? ["approved", "needs_manual"] : ["approved"])
   .eq("channel", "portal")
-  .limit(MAX);
+  .order("created_at");
 
 if (ladeFehler) {
   console.error(`X  [apply-browser] Bewerbungen nicht ladbar: ${ladeFehler.message}`);
   process.exit(1);
 }
 
+const { data: einstellungen } = await db.from("settings").select("exclusions").eq("id", 1).single();
+const ausgeschlosseneFirmen = (((einstellungen?.exclusions ?? {}) as { firmen?: string[] }).firmen ?? [])
+  .map((f) => f.trim().toLowerCase())
+  .filter(Boolean);
+
 type Anzeige = { id: string; title: string; company: string | null; url: string; portal_id: string | null };
 
-const kandidaten = (bereite ?? [])
-  .map((a) => ({ jobId: a.job_id as string, anschreiben: a.cover_letter as string | null, job: a.jobs as unknown as Anzeige | null }))
+const alle = (bereite ?? [])
+  .map((a) => ({
+    jobId: a.job_id as string,
+    status: a.status as string,
+    fehler: (a.error as string | null) ?? "",
+    anschreiben: a.cover_letter as string | null,
+    job: a.jobs as unknown as Anzeige | null,
+  }))
   .filter((k): k is typeof k & { job: Anzeige } => k.job !== null);
+
+/** Warum eine Bewerbung in diesem Lauf nicht angefasst wird - oder null. */
+function ausgelassenWeil(k: (typeof alle)[number]): string | null {
+  const firma = (k.job.company ?? "").toLowerCase();
+  const gesperrt = ausgeschlosseneFirmen.find((f) => firma.includes(f));
+  if (gesperrt) return `Firma ausgeschlossen (${gesperrt})`;
+  if (NIE_ABSCHICKEN.some((u) => k.job.url.includes(u))) return "steht auf NIE_ABSCHICKEN";
+  if (k.status === "needs_manual") {
+    // `nochmal` nimmt nur haengende Bewerbungen von Portalen, auf denen der
+    // Bot wirklich selbst bewerben kann - willhaben-Links bleiben bei Niki.
+    if (!PORTAL_ADAPTER[k.job.portal_id ?? ""]) return "kein Adapter fuer dieses Portal";
+    if (k.fehler.startsWith(UNSICHER_MARKE)) return "war UNSICHER, ob schon abgeschickt - nie automatisch wiederholen";
+  }
+  if (NUR && !k.job.url.includes(NUR)) return "nicht ausgewaehlt (nur:)";
+  return null;
+}
+
+const ausgelassen = alle.map((k) => ({ k, grund: ausgelassenWeil(k) })).filter((x) => x.grund !== null);
+const kandidaten = alle.filter((k) => ausgelassenWeil(k) === null).slice(0, MAX);
 
 console.log(
   `\nApply AI - Browser-Bewerbung\n${"=".repeat(60)}\n` +
-    `${kandidaten.length} freigegebene Bewerbung(en) per Portal\n` +
-    `DRY_RUN: ${env.dryRun ? "AN - es wird nichts geaendert oder geschickt" : "AUS"}\n`,
+    `${kandidaten.length} Portal-Bewerbung(en) dran` +
+    (NOCHMAL ? " (inkl. haengender needs_manual)" : "") +
+    `\nDRY_RUN: ${env.dryRun ? "AN - es wird nichts geaendert oder geschickt" : "AUS"}` +
+    `\nAbsenden: ${env.portalVorschauStopp ? "NEIN - Stopp an der Portal-Vorschau (PORTAL_VORSCHAU_STOPP=1)" : "JA"}\n`,
 );
+for (const { k, grund } of ausgelassen) {
+  if (grund === "nicht ausgewaehlt (nur:)") continue;
+  console.log(`  ausgelassen: ${k.job.company ?? "?"} - ${k.job.title.slice(0, 45)}  -> ${grund}`);
+}
 
 // Kein frueher process.exit(0): siehe die anderen Agenten - eine leere
 // `kandidaten`-Liste durchlaeuft den Rest folgenlos.
 let abgelaufen = 0;
 let manuellNoetig = 0;
 let erledigt = 0;
+let unsicher = 0;
+let wuerde = 0;
 
 if (kandidaten.length === 0) {
   console.log("Nichts zu tun.\n");
@@ -111,7 +155,7 @@ if (kandidaten.length === 0) {
   try {
     for (const k of kandidaten) {
       const job = k.job;
-      console.log(`\n${job.title.slice(0, 55)}  (${job.company ?? "?"})\n    ${job.url}`);
+      console.log(`\n${job.title.slice(0, 55)}  (${job.company ?? "?"})  [${k.status}]\n    ${job.url}`);
 
       let nochDa = true;
       try {
@@ -154,10 +198,7 @@ if (kandidaten.length === 0) {
           await warte(800, 1200);
 
           // Zweite, spaetere Pruefung: der erste Check oben kann eine Anzeige
-          // verpassen, die genau zwischen den beiden Seitenaufrufen verschwindet
-          // (z.B. bei stark nachgefragten Einstiegsjobs). Ohne diesen Check
-          // wuerde der Adapter nur auf einen fehlenden "Jetzt bewerben"-Knopf
-          // mit einer kryptischen Timeout-Meldung stossen.
+          // verpassen, die genau zwischen den beiden Seitenaufrufen verschwindet.
           if (await seiteZeigtAbgelaufen(eingeloggt.page)) {
             abgelaufen++;
             const fehlertext = "Anzeige ist nicht mehr verfuegbar (erst beim zweiten Aufruf bemerkt).";
@@ -176,19 +217,60 @@ if (kandidaten.length === 0) {
             continue;
           }
 
-          const ergebnis = await adapter(eingeloggt.page, {
+          const r = await adapter(eingeloggt.page, {
             anschreiben: k.anschreiben ?? "",
             lebenslaufPfad: env.cvPath,
           });
-          erledigt++;
-          console.log(`    ERLEDIGT - ${ergebnis.belegText}`);
-          if (!env.dryRun) {
-            const bild = await screenshot(eingeloggt.page, `apply-erledigt-${portalId}`);
+
+          if (r.ergebnis === "trockenlauf") {
+            wuerde++;
+            console.log(`    WUERDE RAUSGEHEN - ${r.belegText}`);
+          } else if (r.ergebnis === "abgeschickt") {
+            erledigt++;
+            console.log(`    ABGESCHICKT - ${r.belegText}`);
+            const bild = await screenshot(eingeloggt.page, `apply-abgeschickt-${portalId}`);
             await db
               .from("applications")
-              .update({ status: "sent", sent_at: new Date().toISOString(), proof_path: bild ?? null })
+              .update({ status: "sent", sent_at: new Date().toISOString(), error: null, proof_path: bild ?? null })
               .eq("job_id", k.jobId);
-            await log("browser", "info", `Portal-Bewerbung abgeschickt: ${job.title}`, { jobId: k.jobId, data: { firma: job.company, portal: portalId } });
+            await log("browser", "info", `Portal-Bewerbung abgeschickt: ${job.title}`, {
+              jobId: k.jobId,
+              data: { firma: job.company, portal: portalId, beleg: r.belegText },
+            });
+            await telegram(
+              `✅ abgeschickt (${portalId})\n${job.company ?? "?"}\n${job.title}\n\n${r.belegText}\n\n` +
+                `Was der Bot angegeben hat:\n${r.zusammenfassung}\n\n${job.url}`,
+            );
+          } else if (r.ergebnis === "unsicher") {
+            unsicher++;
+            const fehlertext = `${UNSICHER_MARKE}. ${r.belegText}`;
+            console.log(`    UNSICHER - ${fehlertext}`);
+            const bild = await screenshot(eingeloggt.page, `apply-unsicher-${portalId}`);
+            await db
+              .from("applications")
+              .update({ status: "needs_manual", error: fehlertext, proof_path: bild ?? null })
+              .eq("job_id", k.jobId);
+            await log("browser", "warn", `Portal-Bewerbung unsicher: ${job.title}`, {
+              jobId: k.jobId,
+              data: { firma: job.company, portal: portalId, screenshot: bild ?? null },
+            });
+            await telegram(
+              `❓ unsicher, ob abgeschickt - bitte pruefen (${portalId})\n${job.company ?? "?"}\n${job.title}\n\n` +
+                `${r.belegText}\n\nWas der Bot angegeben hat:\n${r.zusammenfassung}\n\n${job.url}`,
+            );
+          } else {
+            // "vorschau": PORTAL_VORSCHAU_STOPP=1 - Niki schickt selbst ab.
+            manuellNoetig++;
+            console.log(`    AN DER VORSCHAU ANGEHALTEN - ${r.belegText}`);
+            const bild = await screenshot(eingeloggt.page, `apply-vorschau-${portalId}`);
+            await db
+              .from("applications")
+              .update({ status: "needs_manual", error: r.belegText, proof_path: bild ?? null })
+              .eq("job_id", k.jobId);
+            await telegram(
+              `⚠ Portal-Bewerbung braucht dich\n${job.title}\n${job.company ?? "?"}\n\n${r.belegText}\n\n` +
+                `${r.zusammenfassung}\n\n${job.url}`,
+            );
           }
         } catch (e) {
           manuellNoetig++;
@@ -200,7 +282,7 @@ if (kandidaten.length === 0) {
               .from("applications")
               .update({ status: "needs_manual", error: fehlertext, proof_path: bild ?? null })
               .eq("job_id", k.jobId);
-            await telegramMelden(job, fehlertext);
+            await telegram(`⚠ Portal-Bewerbung braucht dich\n${job.title}\n${job.company ?? "?"}\n\n${fehlertext}\n\n${job.url}`);
             await log("browser", "warn", `Portal-Bewerbung braucht Niki: ${job.title}`, { jobId: k.jobId, data: { firma: job.company, fehler: fehlertext } });
           }
         } finally {
@@ -208,14 +290,14 @@ if (kandidaten.length === 0) {
         }
       } else {
         manuellNoetig++;
-        const grund = !eingeloggtBei(portalId)
-          ? `Noch keine gespeicherte Anmeldung fuer "${portalId}" - Apply AI kann sich dort noch nicht selbst bewerben. ` +
-            `Hilft: npm run anmelden ${portalId}`
-          : `Fuer "${portalId}" ist noch kein Bewerbungs-Adapter gebaut.`;
+        const grund = !adapter
+          ? `Fuer "${portalId}" ist noch kein Bewerbungs-Adapter gebaut.`
+          : `Noch keine gespeicherte Anmeldung fuer "${portalId}" - Apply AI kann sich dort noch nicht selbst bewerben. ` +
+            `Hilft: npm run anmelden ${portalId}`;
         console.log(`    NOCH MANUELL - ${grund}`);
         if (!env.dryRun) {
           await db.from("applications").update({ status: "needs_manual", error: grund }).eq("job_id", k.jobId);
-          await telegramMelden(job, grund);
+          await telegram(`⚠ Portal-Bewerbung braucht dich\n${job.title}\n${job.company ?? "?"}\n\n${grund}\n\n${job.url}`);
           await log("browser", "info", `Portal-Bewerbung noch manuell: ${job.title}`, { jobId: k.jobId, data: { firma: job.company, grund } });
         }
       }
@@ -229,8 +311,10 @@ if (kandidaten.length === 0) {
 
 console.log(
   `${"=".repeat(60)}\n` +
-    `${erledigt} abgeschickt, ${manuellNoetig} brauchen Niki, ${abgelaufen} abgelaufen.\n` +
-    (env.dryRun ? "Trockenlauf - nichts wurde in der Datenbank geaendert.\n" : ""),
+    (env.dryRun
+      ? `${wuerde} wuerden rausgehen, ${manuellNoetig} brauchen Niki, ${abgelaufen} abgelaufen.\n` +
+        "Trockenlauf - nichts wurde abgeschickt oder in der Datenbank geaendert.\n"
+      : `${erledigt} abgeschickt, ${unsicher} unsicher, ${manuellNoetig} brauchen Niki, ${abgelaufen} abgelaufen.\n`),
 );
 
 // ------------------------------------------------------------- Hilfsfunktionen
@@ -249,13 +333,11 @@ async function seiteZeigtAbgelaufen(page: Page): Promise<boolean> {
   return MUSTER.some((m) => text.includes(m));
 }
 
-/** Telegram-Meldung mit Direktlink, damit Niki selbst weitermachen kann. */
-async function telegramMelden(job: Anzeige, grund: string): Promise<void> {
+/** Telegram-Nachricht an Niki - ein Fehler dabei bricht den Lauf nicht ab. */
+async function telegram(text: string): Promise<void> {
   if (!telegramEingerichtet()) return;
   try {
-    await sendeNachricht(
-      `⚠ Portal-Bewerbung braucht dich\n${job.title}\n${job.company ?? "?"}\n\n${grund}\n\n${job.url}`,
-    );
+    await sendeNachricht(text);
   } catch (e) {
     console.log(`    Telegram-Meldung fehlgeschlagen: ${(e as Error).message.slice(0, 150)}`);
   }
