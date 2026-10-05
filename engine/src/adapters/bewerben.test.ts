@@ -10,7 +10,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ERFOLGS_MUSTER, erfolgNeuAufgetaucht } from "./bewerben.ts";
+import { BOT_SCHUTZ_MUSTER, ERFOLGS_MUSTER, erfolgNeuAufgetaucht } from "./bewerben.ts";
 
 /** Echter Text von hokifys Vorschau-Seite (2026-09-30, gekuerzt). */
 const HOKIFY_VORSCHAU =
@@ -39,6 +39,7 @@ test("typische Erfolgsmeldungen werden erkannt, wenn sie NEU sind", () => {
     "Bewerbung erfolgreich übermittelt",
     "Du hast dich erfolgreich beworben",
     "Deine Bewerbung ist unterwegs",
+    "Woher kennst du hokify?\nGoogle Suche\nTikTok\nWeiter",
   ]) {
     assert.notEqual(erfolgNeuAufgetaucht(KARRIERE_VORSCHAU, meldung, ERFOLGS_MUSTER), null, meldung);
   }
@@ -47,4 +48,10 @@ test("typische Erfolgsmeldungen werden erkannt, wenn sie NEU sind", () => {
 test("Erfolgstext, der schon VOR dem Klick da war, zaehlt nicht", () => {
   const vorher = "Du hast dich bereits beworben (Hinweis oben auf der Seite)";
   assert.equal(erfolgNeuAufgetaucht(vorher, vorher + "\nirgendwas anderes", ERFOLGS_MUSTER), null);
+});
+
+test("karriere.ats gescheiterte Verifizierung wird als Bot-Schutz erkannt, nie als Erfolg", () => {
+  const nachher = "Bewerbung bei Zum Schwarzen Kameel\nVerifizierung fehlgeschlagen. Bitte lade die Seite neu oder wechsle deinen Browser.";
+  assert.equal(erfolgNeuAufgetaucht(KARRIERE_VORSCHAU, nachher, ERFOLGS_MUSTER), null);
+  assert.notEqual(erfolgNeuAufgetaucht(KARRIERE_VORSCHAU, nachher, BOT_SCHUTZ_MUSTER), null);
 });

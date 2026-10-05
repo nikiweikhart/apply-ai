@@ -46,7 +46,7 @@ import type { Page } from "playwright";
 import { env } from "../lib/env.ts";
 import { log } from "../lib/log.ts";
 import { screenshot, warte } from "../lib/browser.ts";
-import { ERFOLGS_MUSTER, absendenUndPruefen, type BewerbungsErgebnis } from "./bewerben.ts";
+import { BOT_SCHUTZ_MARKE, ERFOLGS_MUSTER, absendenUndPruefen, type BewerbungsErgebnis } from "./bewerben.ts";
 
 const ANMERKUNG_MAX = 3000;
 
@@ -54,9 +54,18 @@ export async function karriereBewerben(
   page: Page,
   bewerbung: { anschreiben: string; lebenslaufPfad: string },
 ): Promise<BewerbungsErgebnis> {
+  // Zwei Formen des Knopfes: bis Ende September `data-is-smart-apply-link`,
+  // seit spaetestens 2026-10-05 ein Kurzlink `bewerben.karriere.at/<code>`
+  // mit `data-qa="apply button"`, der auf dasselbe Formular weiterleitet.
+  // Ein `apply button` mit fremdem Ziel (Firmen-Bewerbersystem) zaehlt
+  // nicht - und nach dem Navigieren wird das Ziel unten noch einmal geprueft.
   const smartBewerbenHref = await page.evaluate(() => {
-    const el = document.querySelector('a[data-is-smart-apply-link="true"]');
-    return el?.getAttribute("href") ?? null;
+    const smart = document.querySelector('a[data-is-smart-apply-link="true"]');
+    if (smart) return smart.getAttribute("href");
+    const knopf = Array.from(document.querySelectorAll('a[data-qa="apply button"]'))
+      .map((a) => a.getAttribute("href") ?? "")
+      .find((h) => /^https:\/\/bewerben\.karriere\.at\/|^\/bewerben/.test(h));
+    return knopf ?? null;
   });
 
   if (!smartBewerbenHref) {
@@ -83,8 +92,13 @@ export async function karriereBewerben(
   // zuverlaessiger als ein Playwright-Klick auf ein unsichtbares Element.
   await page.goto(new URL(smartBewerbenHref, page.url()).toString(), { waitUntil: "domcontentloaded" });
   await warte(1500, 2000);
+  if (!/^https:\/\/www\.karriere\.at\/bewerben/.test(page.url())) {
+    throw new Error(`Bewerben-Link fuehrt nicht zum karriere.at-Formular, sondern nach ${page.url().slice(0, 100)} - bitte selbst bewerben.`);
+  }
 
-  const cvAusgewaehlt = await page.locator('[data-qa="karriere at cv selected"]').count();
+  // data-qa heisst seit Oktober 2026 'karriere at cv  selected' (zwei Leerzeichen) -
+  // deshalb Anfang + Ende vergleichen statt des genauen Werts.
+  const cvAusgewaehlt = await page.locator('[data-qa^="karriere at cv"][data-qa$="selected"]').count();
   if (cvAusgewaehlt === 0) {
     await page.locator('[data-qa="use karriere at cv"]').click();
     await warte(600, 900);
@@ -139,7 +153,10 @@ export async function karriereBewerben(
 
   const { erfolg, captcha } = await absendenUndPruefen(page, () => abschliessen.click(), ERFOLGS_MUSTER);
   if (captcha) {
-    throw new Error("Nach 'Bewerbung abschliessen' kam ein CAPTCHA - wird nicht umgangen, nichts abgeschickt. Bitte selbst abschicken.");
+    throw new Error(
+      `${BOT_SCHUTZ_MARKE}. karriere.at wollte nach 'Bewerbung abschliessen' eine Verifizierung/ein CAPTCHA - ` +
+        "wird nicht umgangen. Bitte selbst ueber den Link bewerben.",
+    );
   }
   if (!erfolg) {
     return {

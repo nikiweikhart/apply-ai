@@ -55,7 +55,7 @@ import { MODELS, env } from "../lib/env.ts";
 import { log } from "../lib/log.ts";
 import { screenshot, warte } from "../lib/browser.ts";
 import { db } from "../lib/supabase.ts";
-import { ERFOLGS_MUSTER, absendenUndPruefen, type BewerbungsErgebnis } from "./bewerben.ts";
+import { BOT_SCHUTZ_MARKE, ERFOLGS_MUSTER, absendenUndPruefen, type BewerbungsErgebnis } from "./bewerben.ts";
 
 const MAX_FRAGEN = 15;
 
@@ -82,14 +82,31 @@ const ANTWORT_FORMAT = {
   },
 };
 
-const ANWEISUNG = (profil: string) =>
+/**
+ * Seit 2026-10-05 mit Sonnet statt Haiku und mit festen Fakten: bei Alfies
+ * hatte Haiku "Deutschkenntnisse -> A" gewaehlt (Profil: Muttersprache) und
+ * "B-Fuehrerschein seit -> mehr als 1 Jahr" (mit 17 unmoeglich). hokify
+ * sperrte das Absenden zum Glueck, aber eine falsche Angabe in einer echten
+ * Bewerbung ist schlimmer als eine nicht abgeschickte.
+ */
+const ANWEISUNG = (profil: string, geburtsdatum: string | null) =>
   `
 Du beantwortest eine einzelne Frage aus einem Bewerbungsassistenten fuer
-einen 17-jaehrigen Schueler in Wien, der einen Wochenendjob sucht. Antworte
-in seinem Namen, ehrlich und auf Basis genau dieser Angaben - erfinde nichts,
-was hier nicht steht:
+einen Schueler in Wien, der einen Wochenendjob sucht. Antworte in seinem
+Namen, ehrlich und auf Basis genau dieser Angaben - erfinde nichts, was hier
+nicht steht:
 
 ${profil}
+
+Feste Fakten, die IMMER gelten (heute ist ${new Date().toISOString().slice(0, 10)}):
+- Geboren am ${geburtsdatum ?? "unbekannt"}, also ${alterInJahren(geburtsdatum) ?? "minderjaehrig"} Jahre alt.
+- Er ist SCHUELER an einer AHS (8. Klasse), kein Student, kein Lehrling.
+- Deutsch ist seine Muttersprache - bei Sprachniveau-Fragen die hoechste
+  Stufe bzw. "Muttersprache" waehlen.
+- Den Fuehrerschein B gibt es in Oesterreich fruehestens mit 17: er hat ihn
+  also hoechstens seit seinem 17. Geburtstag. Jede Option, die laengere
+  Fahrpraxis, Volljaehrigkeit oder Berufserfahrung behauptet, die oben nicht
+  steht, ist falsch.
 
 Ist es eine Auswahlfrage (Optionen werden mitgeliefert): gib in
 "gewaehlte_option" GENAU einen der gegebenen Optionstexte zurueck, unveraendert.
@@ -113,8 +130,9 @@ export async function hokifyAssistentAusfuellen(
   page: Page,
   lebenslaufPfad: string,
 ): Promise<{ fragenUndAntworten: FrageAntwort[]; kostenGesamt: number }> {
-  const { data: einstellungen } = await db.from("settings").select("profile_text").eq("id", 1).single();
+  const { data: einstellungen } = await db.from("settings").select("profile_text, availability").eq("id", 1).single();
   const profil = (einstellungen?.profile_text as string | null) ?? "";
+  const geburtsdatum = ((einstellungen?.availability ?? {}) as { geburtsdatum?: string }).geburtsdatum ?? null;
 
   const fragenUndAntworten: FrageAntwort[] = [];
   let kostenGesamt = 0;
@@ -215,17 +233,48 @@ export async function hokifyAssistentAusfuellen(
       continue;
     }
 
+    // Kalender-Frage (vuejs-datepicker, gefunden am 2026-10-05 bei Alfies und
+    // Mavi): "Kannst du bitte dein Geburtsdatum angeben?". Beantwortet wird
+    // NUR die Geburtsdatum-Frage, mit dem Wert aus der Datenbank - jedes
+    // andere Datum (z.B. "ab wann verfuegbar?") waere geraten, also Abbruch.
+    if (optionen.length === 0 && !hatEditor && (await page.locator(".vdp-datepicker").count()) > 0) {
+      if (/geburtsdatum|geboren/i.test(fragenAbschnitt)) {
+        if (!geburtsdatum) throw new Error("Geburtsdatum-Frage, aber settings.availability.geburtsdatum ist leer.");
+        await datumImKalenderWaehlen(page, geburtsdatum);
+        fragenUndAntworten.push({ frage: "Geburtsdatum", antwort: geburtsdatum.split("-").reverse().join(".") });
+      } else if (/ab wann|anfangen|beginnen|starten|eintritt|verfügbar ab/i.test(fragenAbschnitt)) {
+        // "Ab wann koenntest du anfangen?" (Mavi, 2026-10-05): Niki ist sofort
+        // verfuegbar, arbeitet aber nur am Wochenende - also der naechste
+        // Samstag, der mindestens drei Tage entfernt ist.
+        const start = naechsterSamstag(3);
+        await datumImKalenderWaehlen(page, start);
+        fragenUndAntworten.push({ frage: "Arbeitsbeginn ab", antwort: start.split("-").reverse().join(".") });
+      } else {
+        throw new Error(`Unbekannte Datumsfrage - wird nicht geraten: ${fragenAbschnitt.slice(0, 150)}`);
+      }
+      await warte(400, 700);
+      if (!(await weiterKlicken(page))) break;
+      continue;
+    }
+
     if (optionen.length === 0 && !hatEditor) {
-      // Weder Auswahl noch Freitext noch Checkbox auf dieser Seite - der
-      // Fragen-Teil ist vorbei (oder etwas Unbekanntes). In beiden Faellen
-      // hier aufhoeren, statt zu raten.
-      break;
+      // Weder Auswahl noch Freitext noch Checkbox auf dieser Seite. Steht
+      // noch ein Weiter-Knopf des Assistenten da, ist es eine Frage von
+      // unbekannter Art (z.B. "Gehaltsvorstellungen? Brutto Monatsgehalt",
+      // Mavi 2026-10-05): leer lassen und einmal Weiter versuchen. Ist sie
+      // Pflicht, meldet hokify "Antwort notwendig" und weiterKlicken bricht
+      // ab - erfunden wird nichts. Ohne Weiter-Knopf ist der Fragen-Teil vorbei.
+      const frage = fragenAbschnitt.split("\n").find((z) => z.trim().endsWith("?")) ?? "";
+      if (!frage) break;
+      if (!(await weiterKlicken(page))) break;
+      fragenUndAntworten.push({ frage: frage.trim(), antwort: "leer gelassen (freiwillig)" });
+      continue;
     }
 
     const antwort = await claude.messages.create({
-      model: MODELS.fast,
+      model: MODELS.good,
       max_tokens: 300,
-      system: [{ type: "text", text: ANWEISUNG(profil), cache_control: { type: "ephemeral" } }],
+      system: [{ type: "text", text: ANWEISUNG(profil, geburtsdatum), cache_control: { type: "ephemeral" } }],
       messages: [
         {
           role: "user",
@@ -244,7 +293,7 @@ export async function hokifyAssistentAusfuellen(
       .map((b) => b.text)
       .join("");
     const geparst = JSON.parse(roh) as { gewaehlte_option: string; freitext_antwort: string };
-    kostenGesamt += kosten(MODELS.fast, antwort.usage.input_tokens, antwort.usage.output_tokens);
+    kostenGesamt += kosten(MODELS.good, antwort.usage.input_tokens, antwort.usage.output_tokens);
 
     const frageZeile = fragenAbschnitt.split("\n").find((z) => z.trim().length > 10) ?? "Frage";
 
@@ -358,6 +407,14 @@ export async function hokifyBewerben(
   }
 
   if (await bestaetigen.isVisible().catch(() => false)) {
+    // Gesperrter Knopf = hokify haelt mindestens eine gespeicherte Antwort fuer
+    // ungueltig (bei Alfies am 2026-10-05). Nicht dagegen anklicken.
+    if (await bestaetigen.isDisabled().catch(() => false)) {
+      throw new Error(
+        "hokify sperrt 'Antworten bestaetigen' - mindestens eine gespeicherte Antwort ist ungueltig. " +
+          `Nichts abgeschickt, bitte selbst ansehen.\n${vorschauAntworten.slice(0, 600)}`,
+      );
+    }
     await bestaetigen.click();
     await warte(1500, 2000);
   }
@@ -370,7 +427,10 @@ export async function hokifyBewerben(
 
   const { erfolg, captcha } = await absendenUndPruefen(page, () => versenden.click(), ERFOLGS_MUSTER);
   if (captcha) {
-    throw new Error("Nach 'Bewerbung versenden' kam ein CAPTCHA - wird nicht umgangen, nichts abgeschickt. Bitte selbst abschicken.");
+    throw new Error(
+      `${BOT_SCHUTZ_MARKE}. hokify wollte nach 'Bewerbung versenden' eine Verifizierung/ein CAPTCHA - ` +
+        "wird nicht umgangen. Bitte selbst ueber den Link bewerben.",
+    );
   }
   if (!erfolg) {
     return {
@@ -403,6 +463,35 @@ const DATENSCHUTZ_PFLICHT = /datenschutz\S*\s+(lesen\s+und\s+)?akzeptieren/i;
  * "Antwort notwendig", hat der Assistent eine Pflichtfrage, die hier nicht
  * erkannt wurde - Abbruch statt 15-mal im Kreis zu klicken.
  */
+/**
+ * Waehlt ein Datum (ISO, z.B. "2008-05-14") in hokifys Kalender. Der Kalender
+ * startet in der Jahrzehnt-Ansicht (2020 - 2029): zurueckblaettern bis das
+ * Jahr da ist, Jahr -> Monat -> Tag anklicken. Danach muss das versteckte
+ * Eingabefeld einen Wert haben, sonst Abbruch.
+ */
+export async function datumImKalenderWaehlen(page: Page, iso: string): Promise<void> {
+  const [jahr, monat, tag] = iso.split("-").map(Number) as [number, number, number];
+  const kalender = page.locator(".vdp-datepicker__calendar:visible");
+
+  for (let i = 0; i < 6 && (await kalender.locator(`.cell.year[aria-label="${jahr}"]`).count()) === 0; i++) {
+    await kalender.locator("header .prev").click();
+    await warte(300, 500);
+  }
+  await kalender.locator(`.cell.year[aria-label="${jahr}"]`).click();
+  await warte(300, 500);
+  await page.locator(".vdp-datepicker__calendar:visible .cell.month").nth(monat - 1).click();
+  await warte(300, 500);
+  await page
+    .locator(".vdp-datepicker__calendar:visible .cell.day:not(.blank)")
+    .filter({ hasText: new RegExp(`^\\s*${tag}\\s*$`) })
+    .first()
+    .click();
+  await warte(300, 500);
+
+  const wert = await page.locator('.vdp-datepicker input[type="hidden"]').first().inputValue().catch(() => "");
+  if (!wert) throw new Error(`Datum ${iso} liess sich im hokify-Kalender nicht setzen.`);
+}
+
 async function weiterKlicken(page: Page): Promise<boolean> {
   const weiter = page.locator('[data-cy="interview-button-next"]');
   if ((await weiter.count()) === 0) return false;
@@ -417,4 +506,25 @@ async function weiterKlicken(page: Page): Promise<boolean> {
     );
   }
   return true;
+}
+
+/** Ganze Lebensjahre am heutigen Tag, oder null ohne Geburtsdatum. */
+function alterInJahren(geburtsdatum: string | null): number | null {
+  if (!geburtsdatum) return null;
+  const geboren = new Date(geburtsdatum);
+  const heute = new Date();
+  let alter = heute.getFullYear() - geboren.getFullYear();
+  const nochNicht =
+    heute.getMonth() < geboren.getMonth() ||
+    (heute.getMonth() === geboren.getMonth() && heute.getDate() < geboren.getDate());
+  if (nochNicht) alter--;
+  return alter;
+}
+
+/** ISO-Datum des naechsten Samstags, der mindestens `abstandTage` entfernt ist. */
+function naechsterSamstag(abstandTage: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + abstandTage);
+  while (d.getDay() !== 6) d.setDate(d.getDate() + 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }

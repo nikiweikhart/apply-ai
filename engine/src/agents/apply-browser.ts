@@ -50,8 +50,8 @@ import { sendeNachricht, telegramEingerichtet } from "../lib/telegram.ts";
 import { browserMitProfilStarten, browserStarten, cookiesAblehnen, eingeloggtBei, screenshot, warte } from "../lib/browser.ts";
 import { hokifyBewerben } from "../adapters/hokify-bewerben.ts";
 import { karriereBewerben } from "../adapters/karriere-bewerben.ts";
-import { UNSICHER_MARKE, type BewerbungsAdapter } from "../adapters/bewerben.ts";
-import type { Page } from "playwright";
+import { seiteZeigtAbgelaufen } from "../lib/anzeige.ts";
+import { BOT_SCHUTZ_MARKE, UNSICHER_MARKE, type BewerbungsAdapter } from "../adapters/bewerben.ts";
 
 /**
  * hokify und karriere.at sind gebaut (Baureihenfolge wie beim Scout).
@@ -119,6 +119,7 @@ function ausgelassenWeil(k: (typeof alle)[number]): string | null {
     // Bot wirklich selbst bewerben kann - willhaben-Links bleiben bei Niki.
     if (!PORTAL_ADAPTER[k.job.portal_id ?? ""]) return "kein Adapter fuer dieses Portal";
     if (k.fehler.startsWith(UNSICHER_MARKE)) return "war UNSICHER, ob schon abgeschickt - nie automatisch wiederholen";
+    if (k.fehler.startsWith(BOT_SCHUTZ_MARKE)) return "Bot-Schutz des Portals - Niki bewirbt sich selbst";
   }
   if (NUR && !k.job.url.includes(NUR)) return "nicht ausgewaehlt (nur:)";
   return null;
@@ -318,20 +319,6 @@ console.log(
 );
 
 // ------------------------------------------------------------- Hilfsfunktionen
-
-/** Schaut, ob die Anzeige noch da ist oder das Portal sie schon entfernt hat. */
-async function seiteZeigtAbgelaufen(page: Page): Promise<boolean> {
-  const text = (await page.locator("body").innerText().catch(() => "")).toLowerCase();
-  const MUSTER = [
-    "nicht mehr verfügbar",
-    "nicht mehr aktiv",
-    "wurde bereits gelöscht",
-    "seite nicht gefunden",
-    "diese anzeige ist abgelaufen",
-    "job wurde entfernt",
-  ];
-  return MUSTER.some((m) => text.includes(m));
-}
 
 /** Telegram-Nachricht an Niki - ein Fehler dabei bricht den Lauf nicht ab. */
 async function telegram(text: string): Promise<void> {

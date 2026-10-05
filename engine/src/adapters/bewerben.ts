@@ -44,6 +44,22 @@ export type BewerbungsAdapter = (
 export const UNSICHER_MARKE = "UNSICHER, ob abgeschickt - bitte pruefen";
 
 /**
+ * Fehlertext-Anfang, wenn das Portal das Absenden per Bot-Schutz abgelehnt
+ * hat (CAPTCHA oder unsichtbare Verifizierung). Sicher NICHT abgeschickt -
+ * aber ein zweiter automatischer Versuch wuerde nur wieder abprallen, also
+ * laesst `apply nochmal` solche Bewerbungen aus. Wird nie umgangen.
+ */
+export const BOT_SCHUTZ_MARKE = "BOT-SCHUTZ: Portal hat das automatische Absenden abgelehnt, nichts abgeschickt";
+
+/**
+ * Text, mit dem ein Portal sein unsichtbares Bot-Pruefverfahren scheitern
+ * laesst. karriere.at am 2026-10-05 nach "Bewerbung abschliessen":
+ * "Verifizierung fehlgeschlagen. Bitte lade die Seite neu oder wechsle
+ * deinen Browser."
+ */
+export const BOT_SCHUTZ_MUSTER: RegExp[] = [/verifizierung fehlgeschlagen/, /verification failed/];
+
+/**
  * Ob ein Erfolgstext NACH dem Klick neu auf der Seite steht. Ein Muster, das
  * schon vorher passte (z.B. weil das eigene Anschreiben "Vielen Dank" sagt),
  * zaehlt ausdruecklich nicht - sonst wuerde die Vorschau-Seite selbst schon
@@ -69,6 +85,11 @@ export const ERFOLGS_MUSTER: RegExp[] = [
   /deine bewerbung ist (raus|unterwegs|angekommen|beim unternehmen)/,
   /(erfolgreich|bereits) beworben/,
   /du hast dich (erfolgreich |bereits )?beworben/,
+  // hokify zeigt nach "Bewerbung versenden" einen Papierflieger und gleich
+  // eine Umfrage "Woher kennst du hokify?" - keinen Erfolgstext. Am
+  // 2026-10-05 an Action Retail belegt: genau diese Seite, und Minuten
+  // spaeter kam hokifys Mail "deine Bewerbung wurde erfolgreich versendet".
+  /woher kennst du hokify/,
 ];
 
 /** Sichtbare reCAPTCHA-Aufgabe ("Bilder anklicken") - wird nie umgangen. */
@@ -86,7 +107,8 @@ async function captchaSichtbar(page: Page): Promise<boolean> {
  * Klickt den Absenden-Knopf und wartet bis zu `wartezeitMs` darauf, dass
  * ein Erfolgstext neu auftaucht. `erfolg` ist der gefundene Text oder
  * `null`, wenn es nicht eindeutig ist (dann: `unsicher`). `captcha` heisst:
- * das Portal will eine Bilderaufgabe - dann ist nichts abgeschickt.
+ * das Portal will eine Bilderaufgabe oder meldet eine gescheiterte
+ * Bot-Verifizierung (BOT_SCHUTZ_MUSTER) - dann ist nichts abgeschickt.
  */
 export async function absendenUndPruefen(
   page: Page,
@@ -112,6 +134,7 @@ export async function absendenUndPruefen(
       };
     }
     if (await captchaSichtbar(page)) return { erfolg: null, captcha: true, seitentextNachher: nachher };
+    if (erfolgNeuAufgetaucht(vorher, nachher, BOT_SCHUTZ_MUSTER)) return { erfolg: null, captcha: true, seitentextNachher: nachher };
   }
   return { erfolg: null, captcha: false, seitentextNachher: nachher };
 }

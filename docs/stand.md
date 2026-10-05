@@ -1,6 +1,99 @@
 # Stand und nächster Schritt
 
-**Letzter Arbeitstag: 2026-09-30**
+**Letzter Arbeitstag: 2026-10-05**
+
+## 2026-10-05: Erster echter Versand - 8 Bewerbungen raus
+
+**Nikis Auftrag:** alles ab 70 Punkten geht automatisch raus, und alles, was
+bisher nur auf Telegram lag, wird auf Gültigkeit geprüft und wirklich
+verschickt. Vor dem ersten echten Versand wurden alle 37 freigegebenen
+Anschreiben gelesen - dabei kamen echte Fehler heraus, alle behoben.
+
+**Ergebnis des Tages (echt, nicht Trockenlauf):**
+
+| Weg | abgeschickt | Belege |
+|---|---|---|
+| Mail | Casablanca (Küchenhilfe), Fuchs-Steinklammer (Heuriger), happytiptoes (Weihnachtsmarkt), Haas & Haas (Stephansplatz) | Gmail „Gesendet" |
+| hokify | Action Retail, Weihnachtskulinarik (Punsch), Telemark (Callcenter) | hokify-Mail „Bewerbung erfolgreich versendet", Action hat schon selbst geantwortet |
+
+Dazu **25 abgelaufene Anzeigen** als `failed` markiert (StudentJob und
+willhaben löschen schnell - zwischen Fund und Versand liegen oft drei Wochen).
+
+**Gefunden und behoben:**
+
+1. **Portal-Adressen als „Firmenmail"** (`lib/brief.ts`, `adapters/hilfen.ts`):
+   `mailAusSeite` nahm die erste Adresse der Seite - bei StudentJob ist das
+   `info@studentjob.at` im Seitenfuß. **111 Anzeigen** hatten so eine
+   Portal-Adresse, sechs freigegebene Bewerbungen wären an den
+   StudentJob-Support gegangen. Jetzt werden Portal-Domains übersprungen.
+2. **hokifys `apply.job.<nr>@hokifyjob.com` leitet NICHT weiter** - echt
+   ausprobiert: Antwort ist nur „bewirb dich über hokify.at/apply/<nr>".
+   Zählt jetzt als Portal-Adresse, solche Anzeigen laufen über den
+   hokify-Adapter (so ging die Punsch-Bewerbung dann wirklich raus).
+3. **Testmodus verbrauchte Bewerbungen:** `MAIL_TEST_MODE=1` setzte trotzdem
+   `sent` - die Firma hätte nie etwas bekommen. Jetzt bleibt sie `approved`.
+4. **Mail prüfte keine Gültigkeit:** `lib/anzeige.ts` (gemeinsam mit
+   apply-browser) lädt die Anzeige vorher; abgelaufen -> `failed`. Erkennt
+   willhaben („Diese Anzeige ist nicht mehr verfügbar", Umleitung mit
+   `showAdvertExpiredHint`), StudentJob („nicht mehr aktiv"), karriere, 404/410.
+5. **Backtick-Reste und fehlende Grußformel** in Anschreiben:
+   `briefAufraeumen()` läuft jetzt im Writer und noch einmal beim Versand.
+6. **karriere.at hat den Bewerben-Knopf umgebaut:** statt
+   `data-is-smart-apply-link` ein Kurzlink `bewerben.karriere.at/<code>`
+   (`data-qa="apply button"`). Adapter kennt beide und prüft nach dem
+   Navigieren, dass er wirklich auf `karriere.at/bewerben` gelandet ist.
+   Außerdem heißt das Feld jetzt `karriere at cv  selected` (zwei Leerzeichen).
+7. **hokify-Erfolgsseite:** nach „Bewerbung versenden" zeigt hokify manchmal
+   nur einen Papierflieger + „Woher kennst du hokify?" - steht jetzt in
+   `ERFOLGS_MUSTER` (belegt durch hokifys Bestätigungsmail).
+8. **hokify-Kalenderfragen** (vuejs-datepicker): Geburtsdatum aus der
+   Datenbank, „Ab wann anfangen?" -> nächster Samstag (≥ 3 Tage). Jede andere
+   Datumsfrage -> Abbruch. Unbekannte Fragetypen: einmal leer „Weiter";
+   meldet hokify „Antwort notwendig", Abbruch statt Erfinden.
+9. **Falsche KI-Antworten im hokify-Assistenten** (Alfies): Haiku wählte
+   „Deutschkenntnisse: A" (Profil: Muttersprache) und „Führerschein seit
+   mehr als 1 Jahr" (mit 17 unmöglich). Zum Glück sperrte hokify das
+   Absenden. Jetzt **Sonnet statt Haiku** plus feste Fakten im Prompt (Alter
+   aus dem Geburtsdatum gerechnet, Schüler, Muttersprache, Führerschein erst
+   seit dem 17. Geburtstag). Gesperrtes „Antworten bestätigen" wird erkannt.
+   ⚠ Die drei hokify-Bewerbungen von heute liefen noch mit Haiku-Antworten -
+   die Antworten stehen in den Telegram-Meldungen „✅ abgeschickt".
+
+**karriere.at: Bot-Schutz, kein automatisches Absenden.** Nach „Bewerbung
+abschließen" meldet karriere.at „Verifizierung fehlgeschlagen. Bitte lade die
+Seite neu oder wechsle deinen Browser." Das ist eine Bot-Prüfung - wird
+**nicht umgangen** (Projektregel wie bei CAPTCHAs). Erkannt über
+`BOT_SCHUTZ_MUSTER`, Fehlertext beginnt mit `BOT_SCHUTZ_MARKE`, `apply
+nochmal` lässt solche Bewerbungen aus, Niki bekommt den Link per Telegram.
+
+**Was bei Niki liegt (alle am 2026-10-05 als noch gültig geprüft):**
+
+- karriere.at (Bot-Schutz): G-Star, Skyline, Zum Schwarzen Kameel, Guess;
+  Fabasoft (gar kein karriere-Formular, Bewerbung extern)
+- hokify: Mavi (Pflichtfrage Gehaltsvorstellung - wird nicht erfunden),
+  Alfies (Freelance Driver - die gespeicherten Antworten auf hokify sind
+  falsch, siehe 9.; ehrlich gesagt passt der Job mit 17 kaum)
+- willhaben (Firmenseiten): DoNs Catering, MediaMarkt, SHI Weihnachtsmarkt
+- StudentJob (braucht ein StudentJob-Konto, kein Adapter): Promoter
+  Hochzeitsmessen, Servicepersonal Graben, Nebenjob Kellner, Mathe-Nachhilfe
+- Telegram-Rückfrage offen: Stargategroup (Promotion)
+
+**Automatik: `scripts/versand.ps1`** (freigabe -> mail -> apply ->
+antwort, scharf geschaltet nur für diesen Lauf, Protokoll in
+`engine/logs/`). Das **Einplanen in der Windows-Aufgabenplanung** wurde von
+Claude Codes Rechte-Prüfung als „dauerhafte Änderung" blockiert und bewusst
+nicht umgangen - Niki führt diesen einen Befehl selbst aus (PowerShell):
+
+```
+$a = New-ScheduledTaskAction -Execute "powershell.exe" -Argument '-NoProfile -ExecutionPolicy Bypass -File "C:\Users\nikiw\OneDrive\Dokumente\AI\Claude Code Projekte\apply-ai\scripts\versand.ps1"'
+$t = @((New-ScheduledTaskTrigger -Daily -At 09:00), (New-ScheduledTaskTrigger -Daily -At 19:00))
+$s = New-ScheduledTaskSettingsSet -StartWhenAvailable -RunOnlyIfNetworkAvailable
+Register-ScheduledTask -TaskName "Apply AI Versand" -Action $a -Trigger $t -Settings $s
+```
+
+`-StartWhenAvailable` holt einen verpassten Lauf nach, sobald der PC wieder
+an ist. Ohne eingeschalteten PC geht nichts raus - der Motor in GitHub
+Actions schreibt weiter, abgeschickt wird beim nächsten Lauf.
 
 ## 2026-09-30: hokify und karriere.at schicken jetzt selbst ab
 
@@ -494,6 +587,9 @@ npm run mail                     freigegebene Bewerbungen verschicken (DRY_RUN/M
 npm run apply                    freigegebene Portal-Bewerbungen abschicken (DRY_RUN beachten!)
 npm run apply nochmal            dazu haengende needs_manual von hokify/karriere (nie UNSICHER)
 npm run apply nochmal nur:123    nur die Anzeige, deren Adresse 123 enthaelt
+
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/versand.ps1
+                                 freigabe+mail+apply+antwort SCHARF (wie die geplante Aufgabe)
 
 npm run antwort                  im Postfach nach Firmenantworten suchen (nur lesend)
 npm run antwort trocken          nur zeigen was gefunden wuerde, kein KI-Aufruf
@@ -1065,8 +1161,17 @@ npm run check
 npm run treffer
 ```
 
-Offen seit 2026-09-30: die drei `npm run apply nochmal`-Schritte ganz oben
-(Trockenlauf, eine echte Bewerbung mit `HEADFUL=1`, dann der Rest).
+Erledigt am 2026-10-05: die `apply nochmal`-Schritte vom 2026-09-30 sind
+gelaufen, 8 Bewerbungen echt raus (siehe ganz oben).
+
+Offen seit 2026-10-05:
+- Prüfen, ob Niki die Windows-Aufgabe „Apply AI Versand" eingerichtet hat
+  (`Get-ScheduledTask -TaskName "Apply AI Versand"`) und ob
+  `engine/logs/versand-*.log` sauber aussieht.
+- Die ersten hokify-Läufe mit Sonnet-Antworten in Telegram gegenlesen.
+- Idee, nicht begonnen: Mail-Versand zusätzlich in GitHub Actions (braucht
+  den Lebenslauf als Secret, Repo ist öffentlich) - dann ginge Mail auch
+  bei ausgeschaltetem PC raus.
 
 Der vollständige Bauplan liegt unter
 `C:\Users\nikiw\.claude\plans\radiant-exploring-eclipse.md`.

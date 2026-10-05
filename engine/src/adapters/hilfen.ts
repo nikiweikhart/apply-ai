@@ -5,8 +5,9 @@
  * und damit eine Verbesserung allen Adaptern zugutekommt.
  */
 import type { Page } from "playwright";
+import { istPortalAdresse } from "../lib/brief.ts";
 
-const MAIL_MUSTER = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/;
+const MAIL_MUSTER = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
 
 /**
  * Mailadresse aus der Anzeige holen.
@@ -18,17 +19,23 @@ const MAIL_MUSTER = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/;
  * an jeder Elementgrenze eine saubere Luecke.
  */
 export async function mailAusSeite(page: Page, bereich = "main"): Promise<string | undefined> {
-  const mailto = await page
+  // Adressen des Portals selbst (info@studentjob.at im Seitenfuss) sind nie
+  // die des Arbeitgebers - bis 2026-10-05 wurde einfach die erste Adresse
+  // der Seite genommen, und fuenf Bewerbungen haetten beim Portal-Support
+  // statt bei der Firma landen sollen. Siehe lib/brief.ts.
+  const mailtos = await page
     .locator('a[href^="mailto:"]')
-    .first()
-    .getAttribute("href", { timeout: 1000 })
-    .catch(() => null);
-  if (mailto) return mailto.replace(/^mailto:/i, "").split("?")[0]?.trim();
+    .evaluateAll((links) => links.map((a) => a.getAttribute("href") ?? ""))
+    .catch(() => [] as string[]);
+  for (const href of mailtos) {
+    const mail = href.replace(/^mailto:/i, "").split("?")[0]?.trim();
+    if (mail && !istPortalAdresse(mail)) return mail;
+  }
 
   let html = await page.locator(bereich).first().innerHTML().catch(() => "");
   if (!html) html = await page.locator("body").innerHTML().catch(() => "");
   const flach = html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ");
-  return flach.match(MAIL_MUSTER)?.[0];
+  return (flach.match(MAIL_MUSTER) ?? []).find((m) => !istPortalAdresse(m));
 }
 
 /**

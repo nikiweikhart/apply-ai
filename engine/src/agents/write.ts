@@ -42,6 +42,7 @@ import { log } from "../lib/log.ts";
 import { claude, kosten } from "../lib/claude.ts";
 import { MODELS } from "../lib/env.ts";
 import { sendeNachricht, telegramEingerichtet } from "../lib/telegram.ts";
+import { briefAufraeumen } from "../lib/brief.ts";
 import {
   gleicheFirma,
   firmenSchluessel,
@@ -329,6 +330,8 @@ for (const [i, k] of ausgewaehlt.entries()) {
       .map((b) => b.text)
       .join("");
     const brief = JSON.parse(roh) as Brief;
+    // Backtick-Reste und fehlende Grussformel - siehe lib/brief.ts.
+    brief.anschreiben = briefAufraeumen(brief.anschreiben, name);
     const offen = brief.offene_punkte?.trim() ?? "";
 
     const c = kosten(MODELS.good, antwort.usage.input_tokens, antwort.usage.output_tokens);
