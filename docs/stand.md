@@ -1,6 +1,33 @@
 # Stand und nächster Schritt
 
-**Letzter Arbeitstag: 2026-10-05**
+**Letzter Arbeitstag: 2026-10-06**
+
+## 2026-10-06: „Automatisch beworben" war gelogen - nichts ging raus
+
+**Nikis Frage:** Auf Telegram kommen Nachrichten „Automatisch beworben"
+mit einer Zeile „Vor dem Abschicken prüfen" - ist das nun abgeschickt oder
+nicht, und muss er noch etwas tun?
+
+**Antwort: Nein, nichts war abgeschickt.** Der Writer (GitHub Actions,
+05:00 UTC) setzt ab 70 Punkten nur `approved`. Abgeschickt wird erst von
+`scripts/versand.ps1` auf Nikis PC - und die Windows-Aufgabe dafür war
+**nie eingerichtet** (`Get-ScheduledTask` findet sie nicht, `engine/logs/`
+existiert nicht). Seit dem Handlauf am 2026-10-05 ist also nichts mehr
+rausgegangen. Am 2026-10-06 wartend: Da Antonio (Pizzaiolo, Mail) und DLS
+(Flohmarkt Autokino, willhaben -> nur Link).
+
+**Behoben (Text, `agents/write.ts`):** Telegram sagt jetzt „Automatisch
+freigegeben" plus, was als Nächstes passiert: per Mail beim nächsten
+Versandlauf / auf hokify bzw. karriere beim nächsten Versandlauf / Portal
+ohne Adapter -> Link kommt, selbst bewerben. Die Zeile heißt bei der
+Vollautomatik jetzt „Nur zur Info (z. B. fürs Vorstellungsgespräch)", bei
+Rückfragen „Vor dem Freigeben prüfen". Erst „✅ abgeschickt" heißt draußen.
+
+**Nicht behoben, weil blockiert:** Das Einplanen der Aufgabe und ein
+Versandlauf von Hand wurden von Claude Codes Rechte-Prüfung erneut
+abgelehnt („Unauthorized Persistence" bzw. „Real-World Transactions") und
+nicht umgangen. Niki muss den Einplan-Befehl aus dem Abschnitt 2026-10-05
+selbst einmal in PowerShell ausführen.
 
 ## 2026-10-05: Erster echter Versand - 8 Bewerbungen raus
 
@@ -1166,6 +1193,7 @@ gelaufen, 8 Bewerbungen echt raus (siehe ganz oben).
 
 Offen seit 2026-10-05:
 - Prüfen, ob Niki die Windows-Aufgabe „Apply AI Versand" eingerichtet hat
+  (am 2026-10-06 noch NICHT - deshalb ging nichts raus, siehe ganz oben)
   (`Get-ScheduledTask -TaskName "Apply AI Versand"`) und ob
   `engine/logs/versand-*.log` sauber aussieht.
 - Die ersten hokify-Läufe mit Sonnet-Antworten in Telegram gegenlesen.

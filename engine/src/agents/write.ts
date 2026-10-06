@@ -67,6 +67,10 @@ const { data: einstellungen } = await db
 const profil = (einstellungen?.profile_text as string | null) ?? "";
 const vorlage = (einstellungen?.cover_template as string | null) ?? "";
 const autoAb = (einstellungen?.auto_send_min as number | null) ?? 70;
+
+// Portale, auf denen apply-browser.ts selbst abschickt - muss zu
+// PORTAL_ADAPTER dort passen (nicht importiert, die Datei laeuft beim Laden los).
+const PORTALE_MIT_ADAPTER = ["hokify", "karriere"];
 const freigabeAb = (einstellungen?.approval_min as number | null) ?? 60;
 const name = (einstellungen?.availability as { name?: string } | null)?.name ?? "";
 
@@ -83,7 +87,7 @@ if (!profil || !name) {
 const { data: bewertungen, error: fehler } = await db
   .from("scores")
   .select(
-    "score, reasoning, kjbg_reason, jobs(id, title, company, location, employment, description, url, contact_email)",
+    "score, reasoning, kjbg_reason, jobs(id, title, company, location, employment, description, url, contact_email, portal_id)",
   )
   .eq("hard_filtered", false)
   .gte("score", freigabeAb)
@@ -103,6 +107,7 @@ type Anzeige = {
   description: string | null;
   url: string;
   contact_email: string | null;
+  portal_id: string | null;
 };
 
 const kandidaten = (bewertungen ?? [])
@@ -355,16 +360,36 @@ for (const [i, k] of ausgewaehlt.entries()) {
     // holt das dann nach. Die Vollautomatik haengt davon nicht ab: ein
     // fehlgeschlagener Push ist dort nur eine verpasste Benachrichtigung,
     // kein Grund, die laengst getroffene Entscheidung zurueckzuhalten.
+    // Hier ist noch NICHTS verschickt - das macht erst scripts/versand.ps1
+    // auf Nikis PC. Bis 2026-10-06 stand hier "Automatisch beworben" plus
+    // "Vor dem Abschicken pruefen", Niki hielt die Bewerbung fuer laengst
+    // draussen und wusste nicht, ob er noch etwas tun muss. Jetzt sagt die
+    // Nachricht, was als Naechstes passiert und ob er gefragt ist.
+    const weiter = !vollautomatik
+      ? ""
+      : job.contact_email
+        ? "Freigegeben - geht beim naechsten Versandlauf per Mail raus. Du musst nichts tun, " +
+          "sobald sie draussen ist, kommt \"✅ per Mail abgeschickt\".\n\n"
+        : PORTALE_MIT_ADAPTER.includes(job.portal_id ?? "")
+          ? `Freigegeben - wird beim naechsten Versandlauf auf ${job.portal_id} abgeschickt. ` +
+            "Du musst nichts tun, sobald sie draussen ist, kommt \"✅ abgeschickt\".\n\n"
+          : "Freigegeben, aber dieses Portal kann der Bot nicht selbst bedienen - " +
+            "beim naechsten Versandlauf kommt ein Link, dann bewirbst du dich dort selbst.\n\n";
     let telegramOk = false;
     if (telegramEingerichtet()) {
       try {
         await sendeNachricht(
           (vollautomatik
-            ? `Automatisch beworben (${k.punkte} Punkte, ab ${autoAb} keine Rueckfrage)\n`
+            ? `Automatisch freigegeben (${k.punkte} Punkte, ab ${autoAb} keine Rueckfrage)\n`
             : `Neues Anschreiben (${k.punkte} Punkte)\n`) +
             `${job.title}\n${job.company ?? "?"}  |  ${job.location ?? "?"}\n\n` +
+            weiter +
             `Betreff: ${brief.betreff}\n\n${brief.anschreiben}\n\n` +
-            (offen ? `Vor dem Abschicken pruefen: ${offen}\n\n` : "") +
+            (offen
+              ? vollautomatik
+                ? `Nur zur Info (z. B. fuers Vorstellungsgespraech): ${offen}\n\n`
+                : `Vor dem Freigeben pruefen: ${offen}\n\n`
+              : "") +
             job.url,
           vollautomatik
             ? undefined
