@@ -32,6 +32,27 @@ Geprüft: Entschlüsseln ohne `CV_PDF_PATH` liefert byte-gleich das PDF,
 Mail-Trockenlauf ohne `CV_PDF_PATH` läuft durch (Da Antonio war dabei
 schon abgelaufen).
 
+**Verifiziert am selben Tag:** Niki hat die drei Secrets eingetragen und den
+Motor von Hand gestartet (Lauf `37483332446`, Commit `6a8d725`, alle
+Schritte grün). Der Mail-Schritt lief 17 s (Überspringen wäre sofort) und
+schrieb um 15:04 UTC drei `events` vom Agenten `mail` - er kam also an der
+Secret-Prüfung und am Entschlüsseln des Lebenslaufs vorbei (beides bricht
+sonst vor der ersten Anzeige ab). Verschickt wurde nichts: alle drei
+Kandidaten (Da Antonio, Cafe Restaurant Pan, nora pure sports) waren
+abgelaufen, lokal gegengeprüft - die Cloud meldet richtig, keine
+Fehlsperre durch die Rechenzentrums-Adresse.
+
+**Zwei Dinge, die dabei auffielen:**
+
+- **Der Zeitplan startet nicht um 05:00 UTC.** Die letzten geplanten Läufe
+  begannen zwischen 10:12 und 12:02 UTC - GitHub verschiebt Cron-Läufe bei
+  Last um Stunden. Mail-Bewerbungen gehen also eher mittags raus.
+- **Der Writer schreibt Anschreiben zu längst abgelaufenen Anzeigen.** Zwei
+  der drei wurden im selben Lauf erst geschrieben (inkl. Telegram
+  „Automatisch freigegeben") und eine Minute später als abgelaufen
+  verworfen. Kostet je ~1-2 Cent und verwirrt auf Telegram. Idee, nicht
+  begonnen: `anzeigeNochAktiv()` schon in `write.ts` vor dem Schreiben.
+
 ## 2026-10-06: „Automatisch beworben" war gelogen - nichts ging raus
 
 **Nikis Frage:** Auf Telegram kommen Nachrichten „Automatisch beworben"
