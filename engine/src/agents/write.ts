@@ -43,6 +43,8 @@ import { claude, kosten } from "../lib/claude.ts";
 import { MODELS } from "../lib/env.ts";
 import { sendeNachricht, telegramEingerichtet } from "../lib/telegram.ts";
 import { briefAufraeumen } from "../lib/brief.ts";
+import { anzeigeNochAktiv } from "../lib/anzeige.ts";
+import { browserStarten, cookiesAblehnen } from "../lib/browser.ts";
 import {
   gleicheFirma,
   firmenSchluessel,
@@ -129,13 +131,15 @@ const schonGeschrieben = new Set((bestehende ?? []).map((a) => a.job_id as strin
 /**
  * Firmen, die durch eine bestehende Bewerbung gesperrt sind. Eine abgelehnte
  * Bewerbung (`rejected`) sperrt nicht - die wurde ja bewusst weggeworfen.
+ * `failed` auch nicht (seit 2026-10-06): dort ist nichts bei der Firma
+ * angekommen, meist war nur die Anzeige schon weg.
  *
  * jobId bleibt dran, damit `npm run write nochmal` eine Anzeige nicht durch
  * ihre EIGENE bisherige Bewerbung blockiert - sonst waere jedes Neuschreiben
  * sofort sein eigener Firmensperre-Treffer.
  */
 const gesperrteFirmen = (bestehende ?? [])
-  .filter((a) => a.status !== "rejected" && innerhalbSperrfrist(a.created_at as string))
+  .filter((a) => a.status !== "rejected" && a.status !== "failed" && innerhalbSperrfrist(a.created_at as string))
   .map((a) => ({
     jobId: a.job_id as string,
     firma: (a.jobs as unknown as { company: string | null } | null)?.company ?? null,
@@ -156,7 +160,16 @@ console.log(
 const indiesemLauf: (string | null)[] = [];
 const ausgewaehlt: typeof kandidaten = [];
 let uebersprungenFirma = 0;
+let abgelaufen = 0;
 
+// Vor dem Schreiben pruefen, ob die Anzeige noch online ist (seit
+// 2026-10-06). Vorher schrieb der Writer Anschreiben zu laengst geloeschten
+// Anzeigen, Niki bekam "Automatisch freigegeben", und eine Minute spaeter
+// verwarf der Mail-Schritt sie als abgelaufen. Im Trockenlauf nicht - der
+// soll schnell bleiben und nichts anfassen.
+const browser = TROCKEN || kandidaten.length === 0 ? null : await browserStarten();
+
+try {
 for (const k of kandidaten) {
   if (ausgewaehlt.length >= MAX) break;
   if (!NOCHMAL && schonGeschrieben.has(k.job.id)) continue;
@@ -177,8 +190,46 @@ for (const k of kandidaten) {
     }
   }
 
+  if (browser) {
+    let pruefung: { aktiv: boolean; grund: string };
+    try {
+      pruefung = await anzeigeNochAktiv(browser.page, k.job.url);
+      await cookiesAblehnen(browser.page);
+    } catch (e) {
+      // Netzwerkfehler heisst nicht "weg" - diesmal auslassen, naechster Lauf.
+      console.log(
+        `    ausgelassen  (${String(k.punkte).padStart(3)})  ${k.job.title.slice(0, 45)}\n` +
+          `                       Anzeige gerade nicht pruefbar: ${(e as Error).message.slice(0, 100)}`,
+      );
+      continue;
+    }
+    if (!pruefung.aktiv) {
+      abgelaufen++;
+      console.log(
+        `    abgelaufen   (${String(k.punkte).padStart(3)})  ${k.job.title.slice(0, 45)}\n` +
+          `                       ${pruefung.grund} - kein Anschreiben.`,
+      );
+      // Als `failed` vermerken, damit sie nicht jeden Lauf neu geprueft wird.
+      // Sperrt die Firma nicht (siehe gesperrteFirmen oben).
+      await db.from("applications").upsert(
+        {
+          job_id: k.job.id,
+          status: "failed",
+          channel: k.job.contact_email ? "mail" : "portal",
+          error: `Anzeige schon vor dem Schreiben abgelaufen (${pruefung.grund}).`,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "job_id" },
+      );
+      continue;
+    }
+  }
+
   ausgewaehlt.push(k);
   indiesemLauf.push(k.job.company);
+}
+} finally {
+  await browser?.schliessen();
 }
 
 // Kein fruehes process.exit(0): Node stuerzt unter Windows gelegentlich ab,
@@ -191,6 +242,7 @@ if (ausgewaehlt.length === 0) {
       (uebersprungenFirma > 0
         ? ` ${uebersprungenFirma} Anzeigen hat die Firmensperre gestoppt.`
         : "") +
+      (abgelaufen > 0 ? ` ${abgelaufen} waren schon abgelaufen.` : "") +
       `\nMit 'npm run write nochmal' werden vorhandene Anschreiben neu geschrieben.\n`,
   );
 }
@@ -385,11 +437,11 @@ for (const [i, k] of ausgewaehlt.entries()) {
             `${job.title}\n${job.company ?? "?"}  |  ${job.location ?? "?"}\n\n` +
             weiter +
             `Betreff: ${brief.betreff}\n\n${brief.anschreiben}\n\n` +
-            (offen
-              ? vollautomatik
-                ? `Nur zur Info (z. B. fuers Vorstellungsgespraech): ${offen}\n\n`
-                : `Vor dem Freigeben pruefen: ${offen}\n\n`
-              : "") +
+            // Bei der Vollautomatik gibt es nichts mehr zu pruefen - die
+            // Zeile fiel Niki nur als "noch was tun?" auf (2026-10-06). Steht
+            // weiter im Protokoll (events, offene_punkte). Bei einer
+            // Rueckfrage entscheidet er dagegen selbst, da hilft sie.
+            (offen && !vollautomatik ? `Vor dem Freigeben pruefen: ${offen}\n\n` : "") +
             job.url,
           vollautomatik
             ? undefined
@@ -429,7 +481,7 @@ for (const [i, k] of ausgewaehlt.entries()) {
         `        Betreff: ${brief.betreff}\n` +
         `        ${woerter} Woerter, ${(c * 100).toFixed(1)} Cent, ` +
         `${vollautomatik ? "Vollautomatik - approved" : "Rueckfrage"}\n` +
-        (offen ? `        Vor dem Abschicken pruefen: ${offen}\n` : "") +
+        (offen ? `        Offene Punkte (fuers Gespraech): ${offen}\n` : "") +
         `        Telegram: ${
           telegramOk
             ? vollautomatik
@@ -471,12 +523,13 @@ if (TROCKEN) {
 } else {
   await log("write", "info", `${geschrieben} Anschreiben geschrieben`, {
     costUsd: kostenGesamt,
-    data: { uebersprungenFirma, autoAb, freigabeAb },
+    data: { uebersprungenFirma, abgelaufen, autoAb, freigabeAb },
   });
 
   console.log(
     `${"=".repeat(72)}\n` +
-      `${geschrieben} Anschreiben geschrieben, ${uebersprungenFirma} von der Firmensperre gestoppt.\n` +
+      `${geschrieben} Anschreiben geschrieben, ${uebersprungenFirma} von der Firmensperre gestoppt, ` +
+      `${abgelaufen} schon abgelaufen.\n` +
       `Kosten dieses Laufs: ${(kostenGesamt * 100).toFixed(1)} US-Cent.\n\n` +
       `Alle stehen als Entwurf da - verschickt wurde nichts.\n` +
       `Ansehen mit:  npm run anschreiben\n`,

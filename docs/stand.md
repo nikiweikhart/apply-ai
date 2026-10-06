@@ -50,8 +50,23 @@ Fehlsperre durch die Rechenzentrums-Adresse.
 - **Der Writer schreibt Anschreiben zu längst abgelaufenen Anzeigen.** Zwei
   der drei wurden im selben Lauf erst geschrieben (inkl. Telegram
   „Automatisch freigegeben") und eine Minute später als abgelaufen
-  verworfen. Kostet je ~1-2 Cent und verwirrt auf Telegram. Idee, nicht
-  begonnen: `anzeigeNochAktiv()` schon in `write.ts` vor dem Schreiben.
+  verworfen. Kostet je ~1-2 Cent und verwirrt auf Telegram. **Noch am
+  selben Tag behoben**, siehe nächster Absatz.
+
+**Writer prüft vor dem Schreiben (2026-10-06, Nikis Auftrag):** `write.ts`
+öffnet jede ausgewählte Anzeige mit `anzeigeNochAktiv()`, bevor Sonnet
+schreibt. Abgelaufen -> Zeile in `applications` mit `failed` und Grund
+„schon vor dem Schreiben abgelaufen", die nächste Anzeige rückt nach.
+Nicht prüfbar (Netzwerk) -> diesmal ausgelassen. Im Trockenlauf keine
+Prüfung. **Firmensperre zählt `failed` nicht mehr** - dort ist nichts bei
+der Firma angekommen, eine abgelaufene Anzeige soll die Firma nicht 30 Tage
+sperren. Echter Lauf `npm run write 1`: HOFER Rennbahnweg (88) geprüft,
+online, geschrieben. Der Abgelaufen-Zweig selbst lief noch nicht echt.
+
+**Telegram ohne Prüf-Zeile bei der Vollautomatik:** Niki las „prüfen" als
+„ich muss noch was tun". Die offenen Punkte stehen bei 70+ nicht mehr in
+der Nachricht (nur noch in `events`), bei Rückfragen (60-69) weiter als
+„Vor dem Freigeben prüfen".
 
 ## 2026-10-06: „Automatisch beworben" war gelogen - nichts ging raus
 
