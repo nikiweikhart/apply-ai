@@ -29,6 +29,10 @@ abgelehnt („Unauthorized Persistence" bzw. „Real-World Transactions") und
 nicht umgangen. Niki muss den Einplan-Befehl aus dem Abschnitt 2026-10-05
 selbst einmal in PowerShell ausführen.
 
+**Nachtrag 2026-10-06:** Niki hat die Aufgabe „Apply AI Versand“ selbst
+angelegt (State `Ready`, erster Lauf 2026-10-06 19:00). Ab jetzt geht
+alles ab 70 Punkten zweimal täglich wirklich raus, sofern der PC an ist.
+
 ## 2026-10-05: Erster echter Versand - 8 Bewerbungen raus
 
 **Nikis Auftrag:** alles ab 70 Punkten geht automatisch raus, und alles, was
@@ -1193,7 +1197,7 @@ gelaufen, 8 Bewerbungen echt raus (siehe ganz oben).
 
 Offen seit 2026-10-05:
 - Prüfen, ob Niki die Windows-Aufgabe „Apply AI Versand" eingerichtet hat
-  (am 2026-10-06 noch NICHT - deshalb ging nichts raus, siehe ganz oben)
+  (seit 2026-10-06 eingerichtet - nach dem ersten Lauf das Log prüfen)
   (`Get-ScheduledTask -TaskName "Apply AI Versand"`) und ob
   `engine/logs/versand-*.log` sauber aussieht.
 - Die ersten hokify-Läufe mit Sonnet-Antworten in Telegram gegenlesen.
