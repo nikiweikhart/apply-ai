@@ -2,6 +2,44 @@
 
 **Letzter Arbeitstag: 2026-10-06**
 
+## 2026-10-06: Anschreiben mit Sonnet 5.5
+
+**Nikis Auftrag:** Anschreiben-Modell auf `claude-sonnet-5-5`, Bewertung
+bleibt auf Haiku.
+
+**Welches Modell wofür (alle in `lib/env.ts` -> `MODELS`):**
+
+| Konstante | Modell | wofür |
+|---|---|---|
+| `fast` | `claude-haiku-4-5` | Bewerten (`score.ts`), Explorer, Antwort-Erkennung, `check` - unverändert |
+| `good` | `claude-sonnet-5` | hokify-Formularfragen (`hokify-bewerben.ts`) - unverändert |
+| `anschreiben` | **`claude-sonnet-5-5`** | nur die Anschreiben (`write.ts`) - neu |
+
+`claude-haiku-4-5` ist der Alias zu `claude-haiku-4-5-20251001`, dasselbe
+Modell. In Workflows und `.env.example` steht kein Modellname. Künftiger
+Wechsel des Anschreiben-Modells: eine Zeile in `env.ts` (+ Preis in `PREISE`).
+
+**Was sich in `write.ts` sonst ändern musste:**
+- Aufruf über `claude.beta.messages.create` mit `fallbacks: "default"`
+  (Beta `server-side-fallback-2026-07-01`): lehnt Sonnet 5.5 aus
+  Sicherheitsgründen ab, rechnet der Server mit einem passenden anderen
+  Modell weiter. `stop_reason` `refusal`/`max_tokens` -> klarer Fehler.
+- `max_tokens` 2048 -> 8000: Sonnet 5.5 denkt standardmäßig mit, das zählt
+  mit hinein.
+- Kosten nach `antwort.model` (nach einem Fallback ein anderes Modell).
+- Neuer Modus **`npm run write probe`**: ein echtes Anschreiben zur besten
+  offenen Anzeige, nur Ausgabe - keine DB-Zeile, kein Telegram, nichts
+  kann verschickt werden. Für künftige Modellwechsel.
+
+**Testlauf (`npm run write probe`):** Lidl, Samstagsjob Verkauf, 1210 Wien
+(`hokify.at/job/29105685`, 88 Punkte). Anschreiben vollständig, echte
+Umlaute, Grußformel, keine erfundenen Fakten erkennbar. Dabei lief auch
+die neue Gültigkeitsprüfung echt: die gleichnamige Lidl-Anzeige davor war
+abgelaufen (Umleitung auf hokify.at/jobs) und wurde übersprungen.
+**Kosten: 3,4 Cent** (2772 Ausgabe-Token) statt ~1,2 Cent mit Sonnet 5 -
+das Mitdenken bei Standard-Effort `high`. Möglicher Hebel, nicht umgesetzt:
+`output_config.effort: "medium"` oder `"low"` testen.
+
 ## 2026-10-06: Mail-Versand läuft jetzt auch in GitHub Actions
 
 **Nikis Wunsch:** die App aufs iPhone, weil das immer an ist. **Geht nicht**
@@ -676,6 +714,7 @@ npm run write 1                  nur eines (zum Anschauen, ~1 Cent mit Sonnet)
 npm run write trocken            nur zeigen, wer drankäme — kostet nichts
 npm run write nochmal            vorhandene Anschreiben neu schreiben
 npm run write ohnesperre         Firmensperre außer Kraft (bewusst, selten)
+npm run write probe              ein Anschreiben nur ausgeben (Modelltest, nichts gespeichert)
 
 npm run freigabe                 liegengebliebene Entwürfe nachschicken + Telegram-Knopfdrücke abholen
 

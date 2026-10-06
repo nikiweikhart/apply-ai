@@ -78,10 +78,17 @@ export const MODELS = {
    * Nikis Entscheidung: nur noch Sonnet 5, Opus raus.
    */
   good: "claude-sonnet-5",
+  /**
+   * Nur das Anschreiben (agents/write.ts). Seit 2026-10-06 Sonnet 5.5 - Nikis
+   * Entscheidung, gleicher Preis wie Sonnet 5. Eigene Zeile, damit ein
+   * Wechsel hier nicht nebenbei den hokify-Assistenten (`good`) mitnimmt.
+   */
+  anschreiben: "claude-sonnet-5-5",
 } as const;
 
 /** Preise in Dollar pro 1 Million Token, fuer die Kostenzaehlung. */
 export const PREISE: Record<string, { ein: number; aus: number }> = {
   "claude-haiku-4-5": { ein: 1.0, aus: 5.0 },
   "claude-sonnet-5": { ein: 2.0, aus: 10.0 },
+  "claude-sonnet-5-5": { ein: 2.0, aus: 10.0 },
 };

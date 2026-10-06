@@ -8,7 +8,7 @@
  *   2. Firmensperre: pro Firma hoechstens eine Bewerbung innerhalb der
  *      Sperrfrist (lib/firma.ts). Ohne diese Klammer gingen sechs Briefe an
  *      sechs Standorte derselben Kette raus.
- *   3. Sonnet 5 schreibt Betreff und Anschreiben, bezogen auf genau diese Anzeige.
+ *   3. MODELS.anschreiben (seit 2026-10-06 Sonnet 5.5) schreibt Betreff und Anschreiben, bezogen auf genau diese Anzeige.
  *   4. Ab settings.auto_send_min (Vollautomatik, Nikis Entscheidung vom
  *      2026-07-24, Schwelle am 2026-08-30 auf 70 gesenkt): Status direkt
  *      `approved`, Telegram bekommt nur eine Information, keine Knoepfe.
@@ -34,6 +34,8 @@
  *   npm run write trocken      nur zeigen, wer drankaeme - kein KI-Aufruf, kostenlos
  *   npm run write nochmal      auch schon geschriebene Anschreiben neu schreiben
  *   npm run write ohnesperre   Firmensperre ausser Kraft (bewusst, selten)
+ *   npm run write probe        EIN echtes Anschreiben zur besten offenen Anzeige,
+ *                              nur ausgeben - nichts speichern, kein Telegram
  *
  * Ansehen danach:  npm run anschreiben
  */
@@ -57,7 +59,11 @@ const argv = process.argv.slice(2).filter((a) => !a.startsWith("-"));
 const TROCKEN = argv.includes("trocken");
 const NOCHMAL = argv.includes("nochmal");
 const OHNE_SPERRE = argv.includes("ohnesperre");
-const MAX = Number(argv.find((a) => /^\d+$/.test(a)) ?? 3);
+// Testlauf fuer einen Modellwechsel (2026-10-06): echter KI-Aufruf, aber das
+// Ergebnis wird nur ausgegeben - keine Zeile in applications, kein Telegram,
+// also kann daraus auch nichts verschickt werden.
+const PROBE = argv.includes("probe");
+const MAX = PROBE ? 1 : Number(argv.find((a) => /^\d+$/.test(a)) ?? 3);
 
 // ------------------------------------------------------------- Einstellungen
 const { data: einstellungen } = await db
@@ -151,7 +157,8 @@ console.log(
     `${schonGeschrieben.size} haben schon ein Anschreiben  |  ` +
     `Firmensperre ${OHNE_SPERRE ? "AUS" : `${SPERRFRIST_TAGE} Tage`}\n` +
     (TROCKEN ? "TROCKENLAUF - kein KI-Aufruf, keine Kosten, nichts wird gespeichert\n" : "") +
-    `Modell: ${MODELS.good}, unter 1 US-Cent pro Anschreiben\n`,
+    (PROBE ? "PROBE - ein Anschreiben, nur Ausgabe, nichts gespeichert, kein Telegram\n" : "") +
+    `Modell: ${MODELS.anschreiben}, rund 3 US-Cent pro Anschreiben\n`,
 );
 
 // ------------------------------------------------------------- Auswahl treffen
@@ -211,7 +218,7 @@ for (const k of kandidaten) {
       );
       // Als `failed` vermerken, damit sie nicht jeden Lauf neu geprueft wird.
       // Sperrt die Firma nicht (siehe gesperrteFirmen oben).
-      await db.from("applications").upsert(
+      if (!PROBE) await db.from("applications").upsert(
         {
           job_id: k.job.id,
           status: "failed",
@@ -374,13 +381,25 @@ for (const [i, k] of ausgewaehlt.entries()) {
     .join("\n");
 
   try {
-    const antwort = await claude.messages.create({
-      model: MODELS.good,
-      max_tokens: 2048,
+    // Beta-Aufruf nur wegen `fallbacks`: lehnt Sonnet 5.5 eine Anfrage aus
+    // Sicherheitsgruenden ab, laeuft dieselbe Anfrage serverseitig auf einem
+    // passenden anderen Modell weiter, statt dass das Anschreiben fehlt.
+    // max_tokens grosszuegig: Sonnet 5.5 denkt standardmaessig mit, das
+    // zaehlt mit hinein - abgeschnittenes JSON waere sonst ein Absturz.
+    const antwort = await claude.beta.messages.create({
+      model: MODELS.anschreiben,
+      max_tokens: 8000,
+      betas: ["server-side-fallback-2026-07-01"],
+      fallbacks: "default",
       system: [{ type: "text", text: ANWEISUNG, cache_control: { type: "ephemeral" } }],
       messages: [{ role: "user", content: anzeige }],
       output_config: { format: FORMAT },
     });
+
+    if (antwort.stop_reason === "refusal") {
+      throw new Error(`Modell hat abgelehnt (${antwort.stop_details?.category ?? "ohne Kategorie"})`);
+    }
+    if (antwort.stop_reason === "max_tokens") throw new Error("Antwort abgeschnitten (max_tokens)");
 
     const roh = antwort.content
       .filter((b) => b.type === "text")
@@ -391,9 +410,21 @@ for (const [i, k] of ausgewaehlt.entries()) {
     brief.anschreiben = briefAufraeumen(brief.anschreiben, name);
     const offen = brief.offene_punkte?.trim() ?? "";
 
-    const c = kosten(MODELS.good, antwort.usage.input_tokens, antwort.usage.output_tokens);
+    // antwort.model statt der Konstante: nach einem Fallback hat ein anderes
+    // Modell geantwortet, das kann anders kosten.
+    const c = kosten(antwort.model, antwort.usage.input_tokens, antwort.usage.output_tokens);
     kostenGesamt += c;
     geschrieben++;
+
+    if (PROBE) {
+      console.log(
+        `${kopf}\n        ${job.company ?? "?"}  |  ${job.location ?? "?"}  |  ${job.url}\n` +
+          `        Modell: ${antwort.model}, ${antwort.usage.output_tokens} Ausgabe-Token, ${(c * 100).toFixed(1)} Cent\n\n` +
+          `Betreff: ${brief.betreff}\n\n${brief.anschreiben}\n\n` +
+          (offen ? `Offene Punkte: ${offen}\n` : ""),
+      );
+      continue;
+    }
 
     // Ab auto_send_min entscheidet Niki nicht mehr mit - das ist die
     // "Vollautomatik", die er schon am 2026-07-24 beschlossen und am
@@ -513,7 +544,12 @@ for (const [i, k] of ausgewaehlt.entries()) {
 // if/else statt process.exit(0): Node stuerzt unter Windows gelegentlich ab,
 // wenn der Prozess erzwungen beendet wird, waehrend eine offene
 // Datenbankverbindung noch am Schliessen ist.
-if (TROCKEN) {
+if (PROBE) {
+  console.log(
+    `${"=".repeat(72)}\nProbe: ${geschrieben} Anschreiben, ${(kostenGesamt * 100).toFixed(1)} US-Cent. ` +
+      `Nichts gespeichert, nichts an Telegram, nichts verschickt.\n`,
+  );
+} else if (TROCKEN) {
   console.log(
     `\n${"=".repeat(72)}\n` +
       `Trockenlauf: ${ausgewaehlt.length} Anschreiben waeren entstanden, ` +
