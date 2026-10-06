@@ -40,6 +40,13 @@ abgelaufen (Umleitung auf hokify.at/jobs) und wurde übersprungen.
 das Mitdenken bei Standard-Effort `high`. Möglicher Hebel, nicht umgesetzt:
 `output_config.effort: "medium"` oder `"low"` testen.
 
+**GitHub Actions, Motor Nr. 27** (`37487290519`, Commit `dd3e507`, von
+Niki gestartet): alle Schritte grün. Der Writer schrieb in der Cloud drei
+Anschreiben zu je 2,5-3,3 Cent (9 Cent zusammen - dieselbe Größenordnung
+wie der Probelauf, also Sonnet 5.5), übersprang eine abgelaufene Anzeige
+(`abgelaufen: 1` in `events`) und sechs per Firmensperre. Mail-Schritt nach
+1 s fertig: keine freigegebene Mail-Bewerbung offen.
+
 ## 2026-10-06: Mail-Versand läuft jetzt auch in GitHub Actions
 
 **Nikis Wunsch:** die App aufs iPhone, weil das immer an ist. **Geht nicht**
