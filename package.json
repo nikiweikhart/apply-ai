@@ -19,6 +19,7 @@
     "anmelden": "npm run anmelden -w engine --",
     "mail": "npm run mail -w engine",
     "antwort": "npm run antwort -w engine",
-    "apply": "npm run apply -w engine"
+    "apply": "npm run apply -w engine",
+    "lebenslauf-verschluesseln": "npm run lebenslauf-verschluesseln -w engine"
   }
 }

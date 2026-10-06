@@ -2,6 +2,36 @@
 
 **Letzter Arbeitstag: 2026-10-06**
 
+## 2026-10-06: Mail-Versand läuft jetzt auch in GitHub Actions
+
+**Nikis Wunsch:** die App aufs iPhone, weil das immer an ist. **Geht nicht**
+(iOS lässt keinen ferngesteuerten Browser zu und friert Hintergrund-Apps
+ein) - das eigentliche Ziel „unabhängig vom PC" ist für Mail aber lösbar:
+
+- **Motor-Schritt „Mail-Bewerbungen verschicken"** (`motor.yml`, nach
+  `freigabe`), scharf mit `DRY_RUN=0`/`MAIL_TEST_MODE=0`. Fehlen die
+  Secrets, wird der Schritt übersprungen statt rot.
+- **Lebenslauf verschlüsselt im Repo:** `engine/lebenslauf.enc`
+  (AES-256-GCM, Dateiname mit verschlüsselt, weil er den vollen Namen
+  enthält). Schlüssel `CV_SCHLUESSEL` steht in der `.env` und muss als
+  GitHub-Secret eingetragen werden. `lib/lebenslauf.ts` nimmt lokal das PDF
+  (`CV_PDF_PATH`), sonst die verschlüsselte Fassung. Nach jeder Änderung am
+  Lebenslauf: `npm run lebenslauf-verschluesseln` und committen.
+- **Keine Doppel-Mails:** PC und Cloud verschicken jetzt beide. `mail.ts`
+  stellt jede Bewerbung erst atomar `approved` -> `sending` um, nur wer das
+  schafft, schickt. Neuer Status `sending`; bleibt er nach einem Absturz
+  stehen, wird nicht automatisch wiederholt (in Supabase nachsehen).
+- `mail.ts` prüft den Lebenslauf einmal vor dem Lauf - fehlt er, bricht der
+  Lauf ab, statt jede Bewerbung auf `failed` zu setzen.
+- hokify/karriere bleiben auf dem PC (eingeloggte Profile, Google-Sperre).
+
+**Secrets, die Niki selbst einträgt** (github.com/nikiweikhart/apply-ai ->
+Settings -> Secrets and variables -> Actions): `MAIL_ADDRESS`,
+`MAIL_APP_PASSWORD`, `CV_SCHLUESSEL` - jeweils der Wert aus der `.env`.
+Geprüft: Entschlüsseln ohne `CV_PDF_PATH` liefert byte-gleich das PDF,
+Mail-Trockenlauf ohne `CV_PDF_PATH` läuft durch (Da Antonio war dabei
+schon abgelaufen).
+
 ## 2026-10-06: „Automatisch beworben" war gelogen - nichts ging raus
 
 **Nikis Frage:** Auf Telegram kommen Nachrichten „Automatisch beworben"
@@ -614,6 +644,7 @@ npm run write ohnesperre         Firmensperre außer Kraft (bewusst, selten)
 npm run freigabe                 liegengebliebene Entwürfe nachschicken + Telegram-Knopfdrücke abholen
 
 npm run mail                     freigegebene Bewerbungen verschicken (DRY_RUN/MAIL_TEST_MODE beachten!)
+npm run lebenslauf-verschluesseln  engine/lebenslauf.enc neu erzeugen (nach Lebenslauf-Aenderung)
 
 npm run apply                    freigegebene Portal-Bewerbungen abschicken (DRY_RUN beachten!)
 npm run apply nochmal            dazu haengende needs_manual von hokify/karriere (nie UNSICHER)

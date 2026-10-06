@@ -33,6 +33,7 @@ import { db } from "../lib/supabase.ts";
 import { log } from "../lib/log.ts";
 import { env } from "../lib/env.ts";
 import { verschicke } from "../lib/mailer.ts";
+import { ladeLebenslauf } from "../lib/lebenslauf.ts";
 import { briefAufraeumen, istPortalAdresse } from "../lib/brief.ts";
 import { anzeigeNochAktiv } from "../lib/anzeige.ts";
 import { browserStarten, cookiesAblehnen, warte } from "../lib/browser.ts";
@@ -44,6 +45,16 @@ if (!env.mailAddress || !env.mailPassword) {
       "        -> Ohne die beiden kann Apply AI keine Mail verschicken.\n" +
       "        -> App-Passwort holen: myaccount.google.com -> Sicherheit -> App-Passwoerter.",
   );
+  process.exit(1);
+}
+
+// Einmal vorab: ohne Lebenslauf gar nicht erst anfangen. Sonst landete jede
+// Bewerbung dieses Laufs auf `failed`, obwohl nur der Anhang fehlte (z. B.
+// CV_SCHLUESSEL nicht als GitHub-Secret eingetragen).
+try {
+  await ladeLebenslauf();
+} catch (e) {
+  console.error(`X  [mail] ${(e as Error).message}`);
   process.exit(1);
 }
 
@@ -161,6 +172,24 @@ if (!bereite || bereite.length === 0) {
         continue;
       }
 
+      // Seit 2026-10-06 verschicken zwei Stellen: der Motor in GitHub Actions
+      // und versand.ps1 auf Nikis PC. Laufen beide gleichzeitig (der PC holt
+      // einen verpassten Lauf nach), duerfte keine Bewerbung doppelt rausgehen.
+      // Deshalb erst `approved` -> `sending` umstellen - nur wer das schafft,
+      // schickt. Bricht ein Lauf genau hier ab, bleibt `sending` stehen und
+      // wird nie automatisch wiederholt (lieber einmal zu wenig als doppelt).
+      const { data: geholt } = await db
+        .from("applications")
+        .update({ status: "sending", updated_at: new Date().toISOString() })
+        .eq("job_id", a.job_id)
+        .eq("status", "approved")
+        .select("job_id");
+      if (!geholt?.length) {
+        ausgelassen++;
+        console.log(`        AUSGELASSEN - schickt gerade ein anderer Lauf.\n`);
+        continue;
+      }
+
       try {
         const messageId = await verschicke({ an: empfaenger, betreff, text });
         verschickt++;
@@ -175,6 +204,8 @@ if (!bereite || bereite.length === 0) {
             .update({ status: "sent", sent_at: new Date().toISOString(), cover_letter: text, error: null })
             .eq("job_id", a.job_id);
           await telegram(`✅ per Mail abgeschickt\n${job.company ?? "?"}\n${job.title}\nan: ${empfaenger}\n\n${job.url}`);
+        } else {
+          await db.from("applications").update({ status: "approved" }).eq("job_id", a.job_id);
         }
 
         await log("mail", "info", `Bewerbung verschickt: ${job.title}`, {

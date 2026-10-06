@@ -8,10 +8,9 @@
  * Diese Datei kennt nur "verschicke genau das an genau die Adresse" - so
  * bleibt bei einem Test klar sichtbar, wo im Code die Sicherung sitzt.
  */
-import { readFile } from "node:fs/promises";
-import { basename } from "node:path";
 import nodemailer, { type Transporter } from "nodemailer";
 import { env } from "./env.ts";
+import { ladeLebenslauf } from "./lebenslauf.ts";
 
 function pruefeEingerichtet() {
   if (!env.mailAddress || !env.mailPassword) {
@@ -50,9 +49,8 @@ export type Bewerbungsmail = {
  */
 export async function verschicke(mail: Bewerbungsmail): Promise<string> {
   pruefeEingerichtet();
-  const lebenslauf = await readFile(env.cvPath).catch((e) => {
-    throw new Error(`Lebenslauf nicht lesbar unter ${env.cvPath}: ${(e as Error).message}`);
-  });
+  // Lokal das PDF, in GitHub Actions die verschluesselte Fassung.
+  const lebenslauf = await ladeLebenslauf();
 
   const info = await holeTransporter().sendMail({
     from: env.mailAddress,
@@ -61,8 +59,8 @@ export async function verschicke(mail: Bewerbungsmail): Promise<string> {
     text: mail.text,
     attachments: [
       {
-        filename: basename(env.cvPath),
-        content: lebenslauf,
+        filename: lebenslauf.dateiname,
+        content: lebenslauf.inhalt,
         contentType: "application/pdf",
       },
     ],

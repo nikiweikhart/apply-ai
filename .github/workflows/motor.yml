@@ -2,8 +2,8 @@
 #
 # Warum hier und nicht auf einer Website: hier laeuft ein echter Chrome-Browser,
 # es gibt keine 10-Sekunden-Grenze, und der Zeitplan ist frei waehlbar.
-# Kostenlos, solange das Projekt PRIVAT ist - und privat muss es ohnehin sein,
-# weil Lebenslauf und persoenliche Daten drinstecken.
+# Kostenlos (oeffentliches Repo). Persoenliche Daten stehen nur in Secrets,
+# der Lebenslauf nur verschluesselt (engine/lebenslauf.enc).
 #
 # Bevor das hier zum ersten Mal laufen kann, muessen die Zugangsdaten als
 # "Secrets" hinterlegt werden. Siehe docs/stand.md, Abschnitt GitHub Actions.
@@ -112,6 +112,30 @@ jobs:
         # dem Bauplan (braucht einen Webhook) - Niki sieht das Ergebnis erst
         # beim naechsten Lauf, spaetestens am naechsten Tag.
         run: npm run freigabe
+
+      - name: Mail-Bewerbungen verschicken
+        # Seit 2026-10-06 auch hier, damit Mail-Bewerbungen nicht davon
+        # abhaengen, dass Nikis PC an ist (hokify/karriere bleiben auf dem PC,
+        # dort braucht es sein eingeloggtes Browser-Profil). Der Lebenslauf
+        # kommt verschluesselt aus engine/lebenslauf.enc, siehe
+        # lib/lebenslauf.ts. Doppelt verschickt wird nichts, auch wenn
+        # versand.ps1 zeitgleich laeuft - mail.ts stellt jede Bewerbung erst
+        # auf `sending`, bevor es schickt.
+        #
+        # Scharf (DRY_RUN=0, MAIL_TEST_MODE=0) - Nikis Entscheidung vom
+        # 2026-10-05: ab 70 Punkten geht es wirklich raus.
+        env:
+          MAIL_ADDRESS: ${{ secrets.MAIL_ADDRESS }}
+          MAIL_APP_PASSWORD: ${{ secrets.MAIL_APP_PASSWORD }}
+          CV_SCHLUESSEL: ${{ secrets.CV_SCHLUESSEL }}
+          DRY_RUN: "0"
+          MAIL_TEST_MODE: "0"
+        run: |
+          if [ -z "$MAIL_APP_PASSWORD" ] || [ -z "$CV_SCHLUESSEL" ]; then
+            echo "Mail-Secrets fehlen (MAIL_ADDRESS, MAIL_APP_PASSWORD, CV_SCHLUESSEL) - Schritt uebersprungen."
+            exit 0
+          fi
+          npm run mail
 
       - name: Trefferliste ins Protokoll schreiben
         run: npm run treffer 15

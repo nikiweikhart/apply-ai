@@ -19,6 +19,7 @@
     "mail": "node --env-file-if-exists=../.env src/agents/mail.ts",
     "antwort": "node --env-file-if-exists=../.env src/agents/antwort.ts",
     "apply": "node --env-file-if-exists=../.env src/agents/apply-browser.ts",
+    "lebenslauf-verschluesseln": "node --env-file-if-exists=../.env src/lebenslauf-verschluesseln.ts",
     "test": "node --test \"src/**/*.test.ts\"",
     "typecheck": "tsc --noEmit"
   },
