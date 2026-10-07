@@ -1300,7 +1300,7 @@ auf Nikis Wunsch. Die drei Punkte, die damals als offen galten:
 ## Zum Wiedereinsteigen
 
 ```
-cd "C:\Users\nikiw\OneDrive\Dokumente\AI\Claude Code Projekte\apply-ai"
+# im Repo-Ordner apply-ai (am PC: Claude Code Projekte/apply-ai im AI-Ordner)
 npm run check
 npm run treffer
 ```
@@ -1318,5 +1318,4 @@ Offen seit 2026-10-05:
   den Lebenslauf als Secret, Repo ist öffentlich) - dann ginge Mail auch
   bei ausgeschaltetem PC raus.
 
-Der vollständige Bauplan liegt unter
-`C:\Users\nikiw\.claude\plans\radiant-exploring-eclipse.md`.
+Der vollständige Bauplan liegt unter `docs/bauplan.md` (im Repo).
